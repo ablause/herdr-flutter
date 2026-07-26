@@ -21,7 +21,7 @@ class App {
     Terminal? terminal,
     Handoff? handoff,
     String? repoRoot,
-  }) : terminal = terminal ?? Terminal(),
+  }) : terminal = terminal ?? Terminal(mouse: config.mouse),
        handoff = handoff ?? Handoff(cli),
        state = AppState(config: config, repoRoot: repoRoot ?? findRepoRoot());
 
@@ -53,6 +53,7 @@ class App {
   Future<void> run() async {
     terminal.enter();
     terminal.keys.listen((key) => unawaited(_onKey(key)));
+    terminal.clicks.listen((mouse) => unawaited(_onMouse(mouse)));
     terminal.resizes.listen((_) => _schedule());
     _schedule();
     unawaited(_discover());
@@ -359,6 +360,88 @@ class App {
       state.nodeDetails = await session.fetchDetails(id);
     } on Exception catch (error) {
       _note('details failed: $error', isError: true);
+    }
+    _schedule();
+  }
+
+  /// Clicks and wheel turns, resolved against the frame that is on screen.
+  ///
+  /// The top row selects a view, the wheel scrolls or moves the selection
+  /// depending on what the body shows, and a click inside a list picks the row
+  /// under the pointer.
+  Future<void> _onMouse(Mouse mouse) async {
+    final bodyRow = mouse.row - 1;
+    final lastBodyRow = terminal.rows - 3;
+    final inBody = bodyRow >= 0 && bodyRow <= lastBodyRow;
+
+    if (mouse.kind == MouseKind.wheelUp || mouse.kind == MouseKind.wheelDown) {
+      final up = mouse.kind == MouseKind.wheelUp;
+      switch (state.overlay) {
+        case Overlay.errorDetail:
+        case Overlay.widgetDetail:
+          state.detailScroll = (state.detailScroll + (up ? -3 : 3)).clamp(
+            0,
+            1 << 30,
+          );
+        case Overlay.targets:
+          await _overlayKey(Key(up ? 'up' : 'down'));
+          return;
+        case Overlay.help:
+        case Overlay.toggles:
+          return;
+        case Overlay.none:
+          switch (state.view) {
+            case View.logs:
+              state.logScroll = (state.logScroll + (up ? 3 : -3)).clamp(
+                0,
+                1 << 30,
+              );
+              state.follow = state.logScroll == 0;
+            case View.errors:
+              _errorsKey(Key(up ? 'up' : 'down'));
+            case View.inspector:
+              await _inspectorKey(Key(up ? 'up' : 'down'));
+            case View.info:
+              return;
+          }
+      }
+      _schedule();
+      return;
+    }
+
+    if (!mouse.isLeftPress) return;
+
+    if (mouse.row == 0) {
+      final view = tabAt(state, terminal.columns, mouse.column);
+      if (view == null) return;
+      state.overlay = Overlay.none;
+      _setView(view);
+      return;
+    }
+
+    if (!inBody) return;
+    final item = bodyRow < state.hitRows.length ? state.hitRows[bodyRow] : null;
+    if (item == null) return;
+    switch (state.overlay) {
+      case Overlay.targets:
+        state.targetCursor = item;
+      case Overlay.toggles:
+        final toggle = DebugToggle.all[item];
+        final session = state.session;
+        if (session != null) {
+          final enabled = session.toggleStates[toggle.key] ?? false;
+          final failure = await session.setToggle(toggle, enabled: !enabled);
+          if (failure != null) _note(failure, isError: true);
+        }
+      case Overlay.none when state.view == View.errors:
+        state.errorIndex = item;
+      case Overlay.none when state.view == View.inspector:
+        state.nodeIndex = item;
+      case Overlay.none:
+      case Overlay.help:
+      case Overlay.errorDetail:
+      case Overlay.widgetDetail:
+        return;
     }
     _schedule();
   }

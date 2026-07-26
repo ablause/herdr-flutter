@@ -22,6 +22,7 @@ class PluginConfig {
     this.logLimit = 5000,
     this.followLogs = true,
     this.paneLines = 3000,
+    this.mouse = true,
   });
 
   final String togglePlacement;
@@ -37,6 +38,12 @@ class PluginConfig {
   /// How many scrollback lines to read per pane while discovering an app.
   final int paneLines;
 
+  /// Whether the sidebar asks the terminal for click and wheel reports.
+  ///
+  /// It is what makes the tabs clickable, and it is also what takes click-drag
+  /// text selection away from the pane, so it can be turned off.
+  final bool mouse;
+
   static const _placements = {'split', 'overlay', 'zoomed', 'tab'};
   static const _directions = {'right', 'down'};
 
@@ -48,6 +55,7 @@ class PluginConfig {
     'log_limit',
     'follow_logs',
     'pane_lines',
+    'mouse',
   };
 
   /// Only the keys the sidebar scripts consume, so bash never parses TOML.
@@ -116,6 +124,7 @@ class PluginConfig {
       logLimit: logLimit,
       followLogs: _bool(values, 'follow_logs', true, source),
       paneLines: paneLines,
+      mouse: _bool(values, 'mouse', true, source),
     );
   }
 

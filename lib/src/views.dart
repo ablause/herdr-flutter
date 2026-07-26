@@ -21,14 +21,26 @@ List<String> renderFrame(AppState state, int width, int height) {
   return rows.take(height).toList();
 }
 
-/// The numbered views on the left, what the sidebar is attached to on the right.
-String _tabs(AppState state, int width) {
-  final line = LineBuilder(width);
+/// One tab as drawn: its text and the columns it occupies.
+class TabSpan {
+  const TabSpan(this.view, this.text, this.start);
+
+  final View view;
+  final String text;
+  final int start;
+
+  int get end => start + text.length;
+}
+
+/// Where each tab sits on the top row, so a click can be mapped back to a view.
+List<TabSpan> tabSpans(AppState state, int width) {
   // The app and its state matter more than full tab names, so the names give way
   // first, then disappear entirely, leaving the numbers that select them.
   final detail = width >= 52
       ? _TabDetail.counts
       : (width >= 34 ? _TabDetail.short : _TabDetail.numbers);
+  final spans = <TabSpan>[];
+  var start = 0;
   for (final view in View.values) {
     final count = switch (view) {
       View.logs => state.visibleLogs.length,
@@ -36,7 +48,6 @@ String _tabs(AppState state, int width) {
       View.inspector => state.flatTree.length,
       View.info => 0,
     };
-    final active = view == state.view;
     final label = switch (detail) {
       _TabDetail.counts =>
         count > 0
@@ -45,7 +56,27 @@ String _tabs(AppState state, int width) {
       _TabDetail.short => '${view.index + 1} ${view.short}',
       _TabDetail.numbers => '${view.index + 1}',
     };
-    line.add(' $label ', active ? Style.reverse : Style.dim);
+    final text = ' $label ';
+    spans.add(TabSpan(view, text, start));
+    start += text.length;
+  }
+  return spans;
+}
+
+/// The view a click on the top row lands on, or null between or past the tabs.
+View? tabAt(AppState state, int width, int column) {
+  if (column >= width) return null;
+  for (final span in tabSpans(state, width)) {
+    if (column >= span.start && column < span.end) return span.view;
+  }
+  return null;
+}
+
+/// The numbered views on the left, what the sidebar is attached to on the right.
+String _tabs(AppState state, int width) {
+  final line = LineBuilder(width);
+  for (final span in tabSpans(state, width)) {
+    line.add(span.text, span.view == state.view ? Style.reverse : Style.dim);
   }
 
   final (label, word, style) = _attachment(state);
@@ -79,6 +110,7 @@ enum _TabDetail { counts, short, numbers }
 
 List<String> _body(AppState state, int width, int height) {
   if (height <= 0) return const [];
+  state.hitRows = [];
   return switch (state.overlay) {
     Overlay.help => _pad(_helpBody(width), height),
     Overlay.toggles => _pad(_togglesBody(state, width), height),
@@ -217,6 +249,7 @@ List<String> _errorsBody(AppState state, int width, int height) {
     line.add('${_clock(error.time)} ', Style.brightBlack);
     line.addEllipsized(error.summary, isSelected ? Style.boldRed : Style.red);
     rows.add(line.build());
+    state.hitRows.add(index);
     if (isSelected) {
       final location = error.location;
       if (location != null) {
@@ -226,7 +259,10 @@ List<String> _errorsBody(AppState state, int width, int height) {
           location.display(root: state.repoRoot),
           Style.brightBlack,
         );
-        if (rows.length < height) rows.add(detail.build());
+        if (rows.length < height) {
+          rows.add(detail.build());
+          state.hitRows.add(index);
+        }
       }
     }
   }
@@ -291,6 +327,7 @@ List<String> _inspectorBody(AppState state, int width, int height) {
       line.add('"', Style.brightBlack);
     }
     rows.add(line.build());
+    state.hitRows.add(index);
   }
   return rows;
 }
@@ -356,6 +393,8 @@ List<String> _infoBody(AppState state, int width) {
 List<String> _helpBody(int width) {
   const entries = <(String, String)>[
     ('1 2 3 4 / tab', 'switch view'),
+    ('click', 'switch view, or pick a row'),
+    ('wheel', 'scroll, or move the selection'),
     ('j k up down', 'move'),
     ('g G', 'top, bottom (inspector: fetch tree)'),
     ('pgup pgdn', 'page'),
@@ -387,7 +426,8 @@ List<String> _helpBody(int width) {
 List<String> _togglesBody(AppState state, int width) {
   final session = state.session;
   final rows = <String>['', _text(' Debug toggles', width, Style.bold), ''];
-  for (final toggle in DebugToggle.all) {
+  state.hitRows.addAll(List<int?>.filled(rows.length, null));
+  for (final (index, toggle) in DebugToggle.all.indexed) {
     final available = session?.extensionRpcs.contains(toggle.method) ?? false;
     final enabled = session?.toggleStates[toggle.key] ?? false;
     final line = LineBuilder(width);
@@ -396,16 +436,20 @@ List<String> _togglesBody(AppState state, int width) {
     line.addEllipsized(toggle.label, available ? Style.none : Style.dim);
     if (!available) line.addRight('n/a ', Style.dim);
     rows.add(line.build());
+    state.hitRows.add(index);
   }
   rows.add('');
   rows.add(_text(' esc  close', width, Style.dim));
+  state.hitRows.addAll([null, null]);
   return rows;
 }
 
 List<String> _targetsBody(AppState state, int width) {
   final rows = <String>['', _text(' Running apps', width, Style.bold), ''];
+  state.hitRows.addAll(List<int?>.filled(rows.length, null));
   if (state.targets.isEmpty) {
     rows.add(_text('  none found', width, Style.dim));
+    state.hitRows.add(null);
   }
   for (final (index, target) in state.targets.indexed) {
     final isCursor = index == state.targetCursor;
@@ -415,6 +459,7 @@ List<String> _targetsBody(AppState state, int width) {
     line.add(isCurrent ? '● ' : '  ', Style.green);
     line.addEllipsized(target.label, isCursor ? Style.bold : Style.none);
     rows.add(line.build());
+    state.hitRows.add(index);
     final detail = LineBuilder(width);
     detail.add('    ', Style.none);
     detail.addEllipsized(
@@ -423,11 +468,13 @@ List<String> _targetsBody(AppState state, int width) {
       Style.brightBlack,
     );
     rows.add(detail.build());
+    state.hitRows.add(index);
   }
   rows.add('');
   rows.add(
     _text(' enter  attach     D  rescan     esc  close', width, Style.dim),
   );
+  state.hitRows.addAll([null, null]);
   return rows;
 }
 

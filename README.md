@@ -100,6 +100,15 @@ in the plugin config.
 | `D` | pick an app to attach to |
 | `?` `q` | keys, quit |
 
+The mouse works too: click a tab to switch view, click a row in the errors,
+inspector or app lists to select it, click a debug toggle to flip it, and use the
+wheel to scroll the log or move a selection.
+
+Capturing the mouse is what takes click-drag text selection away from the pane.
+Most terminals still select with shift held down, `y` copies the current capture
+to the clipboard anyway, and `mouse = false` in the plugin config gives selection
+back and leaves the keyboard in charge.
+
 ## Sending to the agent
 
 `s` writes a markdown report under
@@ -128,6 +137,7 @@ service_uri = ""             # attach here instead of scanning panes
 log_limit = 5000             # lines kept in memory
 follow_logs = true           # stick to the newest line
 pane_lines = 3000            # scrollback read per pane while discovering
+mouse = true                 # clickable tabs and rows, at the cost of selection
 ```
 
 Unknown keys and out-of-range values are errors, not silently ignored lines: every

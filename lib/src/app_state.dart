@@ -73,6 +73,13 @@ class AppState {
   String? status;
   bool statusIsError = false;
 
+  /// For each body row of the last drawn frame, the index of the list item it
+  /// shows, or null for a row that is not part of a list.
+  ///
+  /// The renderer fills this so a click can be resolved against exactly what is
+  /// on screen, scrolling and multi-row entries included.
+  List<int?> hitRows = [];
+
   ErrorItem? get selectedError =>
       errors.isEmpty ? null : errors[errorIndex.clamp(0, errors.length - 1)];
 
