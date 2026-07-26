@@ -82,7 +82,16 @@ class HerdrCli {
   }
 
   Future<Map<String, Object?>> _json(List<String> args) async {
-    final result = await Process.run(_bin, args);
+    final ProcessResult result;
+    try {
+      result = await Process.run(_bin, args);
+    } on ProcessException catch (error) {
+      // Outside herdr the binary is simply absent. That is not fatal: a
+      // configured service_uri still gives the sidebar an app to attach to.
+      throw HerdrCliException(
+        'herdr ${args.first} unavailable: ${error.message}',
+      );
+    }
     final stdoutText = (result.stdout as String).trim();
     if (stdoutText.isEmpty) {
       final stderrText = (result.stderr as String).trim();
@@ -114,17 +123,22 @@ class HerdrCli {
 
   /// Terminal output of a pane, newest lines last.
   Future<String> readPane(String paneId, {int lines = 2000}) async {
-    final result = await Process.run(_bin, [
-      'pane',
-      'read',
-      paneId,
-      '--source',
-      'recent-unwrapped',
-      '--lines',
-      '$lines',
-      '--format',
-      'text',
-    ]);
+    final ProcessResult result;
+    try {
+      result = await Process.run(_bin, [
+        'pane',
+        'read',
+        paneId,
+        '--source',
+        'recent-unwrapped',
+        '--lines',
+        '$lines',
+        '--format',
+        'text',
+      ]);
+    } on ProcessException catch (error) {
+      throw HerdrCliException('herdr pane read unavailable: ${error.message}');
+    }
     if (result.exitCode != 0) {
       throw HerdrCliException('herdr pane read $paneId failed');
     }
@@ -136,7 +150,14 @@ class HerdrCli {
   /// This is how both the hot reload keystroke and the agent handoff land: it
   /// never submits, so an agent pane keeps the text in its input.
   Future<void> sendText(String paneId, String text) async {
-    final result = await Process.run(_bin, ['pane', 'send-text', paneId, text]);
+    final ProcessResult result;
+    try {
+      result = await Process.run(_bin, ['pane', 'send-text', paneId, text]);
+    } on ProcessException catch (error) {
+      throw HerdrCliException(
+        'herdr pane send-text unavailable: ${error.message}',
+      );
+    }
     if (result.exitCode != 0) {
       throw HerdrCliException('herdr pane send-text $paneId failed');
     }
