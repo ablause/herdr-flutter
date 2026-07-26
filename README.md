@@ -3,6 +3,8 @@
 A herdr sidebar for a running Flutter app: its logs, its errors, its widget tree,
 and one key to hand any of that to the agent working beside it.
 
+![The sidebar beside the agent: an error, then the same error in the agent's input](assets/demo.gif)
+
 It attaches to the Dart VM Service of a `flutter run` that is already going. It
 never launches or owns the app, so the run keeps living in its own pane with its
 own output, and closing the sidebar changes nothing about it.
