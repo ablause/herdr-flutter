@@ -9,7 +9,7 @@ import 'package:herdr_flutter/src/herdr_cli.dart';
 import 'package:herdr_flutter/src/models.dart';
 import 'package:herdr_flutter/src/session.dart';
 
-const _version = '0.1.1';
+const _version = '0.1.1'; // x-release-please-version
 
 const _usage =
     '''

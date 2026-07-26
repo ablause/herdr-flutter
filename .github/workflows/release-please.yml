@@ -1,0 +1,37 @@
+name: release-please
+
+# Keeps a release pull request open on top of main: it collects the conventional
+# commits since the last tag, writes the changelog and bumps the version in the
+# three files that carry it. Merging it tags the release and builds the binaries.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      released: ${{ steps.release.outputs.release_created }}
+      tag: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  # A tag pushed with the workflow token does not start the tag-triggered
+  # workflow, so the binaries are asked for directly rather than waited on.
+  binaries:
+    needs: prepare
+    if: needs.prepare.outputs.released == 'true'
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.prepare.outputs.tag }}
+    permissions:
+      contents: write
+    secrets: inherit

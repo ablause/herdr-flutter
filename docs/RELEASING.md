@@ -1,31 +1,41 @@
 # Releasing
 
-The release tag drives the install: `herdr/install.sh` reads the version from
-`herdr-plugin.toml` and downloads the assets from the matching `v<version>` tag.
-So the version has to be bumped before the tag, never after.
+Releases are prepared by release-please and cut by merging its pull request.
+Nothing is bumped or tagged by hand.
 
-## Cut a release
+## The flow
 
-1. Bump the version in the three places CI checks:
-   - `herdr-plugin.toml` (`version = "…"`)
-   - `pubspec.yaml` (`version: …`)
-   - `bin/herdr_flutter.dart` (`const _version = '…'`)
-2. `dart analyze && dart test`
-3. Commit: `chore(release): 0.2.0`
-4. Tag and push:
+1. Land work on `main` with conventional commits. The type decides the bump:
+   `feat` moves the minor, `fix` and `perf` the patch, and while the version is
+   below 1.0 a breaking change moves the minor rather than the major.
+2. release-please keeps a pull request open titled `chore(main): release x.y.z`.
+   It holds the changelog for everything since the last tag and the version bump
+   in the three files that carry it:
+   - `pubspec.yaml`, from the dart release type
+   - `herdr-plugin.toml` and `bin/herdr_flutter.dart`, from the
+     `x-release-please-version` marker on their version line
+3. Read the changelog in that pull request. It is the release notes, so edit the
+   commit subjects that read badly before merging.
+4. Merge it. release-please tags `vx.y.z`, creates the GitHub Release, and the
+   same workflow then calls the release build.
 
-   ```sh
-   git tag v0.2.0
-   git push origin main --follow-tags
-   ```
+Do not push a `v*` tag by hand unless you are redoing a release that failed: the
+manifest in `.release-please-manifest.json` is the source of truth for the last
+released version, and a hand-made tag leaves it stale.
 
-The `release` workflow then creates the GitHub Release for the tag and attaches
-four archives with a checksum sidecar each:
+## Why the build is called rather than triggered
+
+A tag pushed with a workflow's own `GITHUB_TOKEN` does not start another
+workflow. The release job therefore calls `release.yml` through `workflow_call`
+instead of relying on the tag push being noticed. The same workflow still runs on
+a hand-pushed tag, and still accepts a manual run for an existing tag.
+
+## The assets
 
 | asset | built on |
 | --- | --- |
 | `herdr-flutter-aarch64-apple-darwin.tar.gz` | macos-latest |
-| `herdr-flutter-x86_64-apple-darwin.tar.gz` | macos-13 |
+| `herdr-flutter-x86_64-apple-darwin.tar.gz` | macos-15-intel |
 | `herdr-flutter-x86_64-unknown-linux-gnu.tar.gz` | ubuntu-latest |
 | `herdr-flutter-aarch64-unknown-linux-gnu.tar.gz` | emulated arm64 container |
 
@@ -39,6 +49,13 @@ gh run watch                                   # the release workflow
 gh release view v0.2.0 --repo ablause/herdr-flutter
 bash herdr/install.sh --prebuilt               # what a user gets
 ./bin/herdr-flutter --version
+```
+
+If a target failed on a runner outage, rerun its build for the existing tag
+without moving anything:
+
+```sh
+gh workflow run release.yml -f tag=v0.2.0
 ```
 
 ## While the repository is private

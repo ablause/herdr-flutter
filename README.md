@@ -177,7 +177,10 @@ bash herdr/install.sh --source                      # rebuild the binary
 ```
 
 Use `--source`: the plain `install.sh` prefers the release asset and would
-overwrite a locally built binary. Releasing is described in `docs/RELEASING.md`.
+overwrite a locally built binary.
+
+Releases are prepared by release-please from the conventional commits on `main`
+and cut by merging the pull request it keeps open; see `docs/RELEASING.md`.
 
 `--probe` is the non-interactive check: it does the whole discovery, attach,
 stream and inspector path and prints what it saw, which is how the protocol side

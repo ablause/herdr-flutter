@@ -14,6 +14,15 @@ on:
       tag:
         description: "Existing tag to build and upload assets for"
         required: true
+  # release-please tags with the workflow token, and a token-made tag does not
+  # start another workflow, so the release job calls this one instead of relying
+  # on the tag push being noticed.
+  workflow_call:
+    inputs:
+      tag:
+        description: "Tag to build and upload assets for"
+        required: true
+        type: string
 
 permissions:
   contents: write
