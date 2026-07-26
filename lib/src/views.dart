@@ -115,7 +115,6 @@ List<String> _body(AppState state, int width, int height) {
     Overlay.help => _pad(_helpBody(width), height),
     Overlay.toggles => _pad(_togglesBody(state, width), height),
     Overlay.targets => _pad(_targetsBody(state, width), height),
-    Overlay.launch => _pad(_launchBody(state, width), height),
     Overlay.errorDetail => _pad(_errorDetailBody(state, width, height), height),
     Overlay.widgetDetail => _pad(
       _widgetDetailBody(state, width, height),
@@ -419,7 +418,6 @@ List<String> _helpBody(int width) {
     ('/', 'filter the log, esc clears'),
     ('c', 'clear the log'),
     ('D', 'pick an app to attach to'),
-    ('L', 'launch the app, when none is running'),
     ('ctrl-l', 'redraw'),
     ('? esc', 'this help, close'),
     ('q', 'quit'),
@@ -484,72 +482,6 @@ List<String> _targetsBody(AppState state, int width) {
   rows.add('');
   rows.add(
     _text(' enter  attach     D  rescan     esc  close', width, Style.dim),
-  );
-  state.hitRows.addAll([null, null]);
-  return rows;
-}
-
-List<String> _launchBody(AppState state, int width) {
-  final rows = <String>['', _text(' Launch the app', width, Style.bold), ''];
-  state.hitRows.addAll(List<int?>.filled(rows.length, null));
-
-  void entry(String key, String? value, [Style style = Style.none]) {
-    if (value == null || value.isEmpty) return;
-    final line = LineBuilder(width);
-    line.add(' ${key.padRight(10)}', Style.brightBlack);
-    line.addEllipsized(value, style);
-    rows.add(line.build());
-    state.hitRows.add(null);
-  }
-
-  final command = state.launchCommand;
-  if (command == null) {
-    for (final line in _wrap(
-      'Nothing to relaunch: no pane in this workspace shows a flutter run in '
-      'its scrollback. Start the app once by hand and the sidebar will '
-      'remember the command, or set run_command in the plugin config.',
-      width - 4,
-    )) {
-      rows.add(_text('  $line', width, Style.dim));
-      state.hitRows.add(null);
-    }
-    rows.add('');
-    rows.add(_text(' esc  close', width, Style.dim));
-    state.hitRows.addAll([null, null]);
-    return rows;
-  }
-
-  entry('command', command, Style.boldCyan);
-  entry('from', state.launchCommandSource, Style.dim);
-  entry('in', state.launchCwd, Style.dim);
-  rows.add('');
-  state.hitRows.add(null);
-
-  for (final (index, where) in LaunchWhere.values.indexed) {
-    final available = where != LaunchWhere.previousPane || state.launchPaneFree;
-    final chosen = where == state.launchWhere;
-    final line = LineBuilder(width);
-    line.add(chosen ? ' › ' : '   ', Style.boldCyan);
-    line.add(chosen ? '(•) ' : '( ) ', chosen ? Style.green : Style.dim);
-    final pane = state.launchPaneId;
-    final label = where == LaunchWhere.previousPane && pane != null
-        ? '${where.label} ($pane)'
-        : where.label;
-    line.addEllipsized(label, available ? Style.none : Style.dim);
-    if (!available) line.addRight('busy ', Style.dim);
-    rows.add(line.build());
-    state.hitRows.add(index);
-  }
-
-  rows.add('');
-  rows.add(
-    _text(
-      state.launching
-          ? ' launching…'
-          : ' enter  launch     p s t  where     esc  close',
-      width,
-      state.launching ? Style.boldYellow : Style.dim,
-    ),
   );
   state.hitRows.addAll([null, null]);
   return rows;
@@ -638,7 +570,7 @@ String _statusBar(AppState state, int width) {
   // A narrow pane gets a shorter list rather than a sentence cut mid-word.
   final compact = width < 64;
   final hints = switch (state.overlay) {
-    Overlay.none when !attached => 'L launch  D rescan',
+    Overlay.none when !attached => 'D rescan',
     Overlay.none => switch (state.view) {
       View.logs =>
         compact

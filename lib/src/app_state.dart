@@ -19,18 +19,7 @@ enum View {
 
 /// Which full-pane overlay is up, if any. A sidebar is too narrow for split
 /// detail panes, so detail takes the whole body and escape goes back.
-enum Overlay { none, help, toggles, targets, errorDetail, widgetDetail, launch }
-
-/// Where a launch puts the app it starts.
-enum LaunchWhere {
-  previousPane('the pane it last ran in'),
-  split('a new split'),
-  tab('a new tab');
-
-  const LaunchWhere(this.label);
-
-  final String label;
-}
+enum Overlay { none, help, toggles, targets, errorDetail, widgetDetail }
 
 /// Everything the renderer needs. Mutated by the app, read by the views.
 class AppState {
@@ -80,15 +69,6 @@ class AppState {
   Map<String, Object?>? nodeDetails;
 
   int targetCursor = 0;
-
-  /// What a launch would run, where it would run it, and why it is offered.
-  String? launchCommand;
-  String? launchCommandSource;
-  String? launchPaneId;
-  String? launchCwd;
-  bool launchPaneFree = false;
-  LaunchWhere launchWhere = LaunchWhere.split;
-  bool launching = false;
 
   String? status;
   bool statusIsError = false;

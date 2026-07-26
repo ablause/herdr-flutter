@@ -8,7 +8,6 @@ import 'discovery.dart';
 import 'handoff.dart';
 import 'herdr_cli.dart';
 import 'models.dart';
-import 'project.dart';
 import 'report.dart';
 import 'session.dart';
 import 'tui/terminal.dart';
@@ -389,123 +388,6 @@ class App {
   /// The top row selects a view, the wheel scrolls or moves the selection
   /// depending on what the body shows, and a click inside a list picks the row
   /// under the pointer.
-  /// Work out what a launch would run and where, then show it for confirmation.
-  ///
-  /// Nothing is decided silently: the command comes from a pane's scrollback or
-  /// from the config, and the placement defaults to the pane the app last ran in
-  /// only when that pane is free.
-  Future<void> _openLaunch() async {
-    final session = state.session;
-    if (session != null && session.isConnected) {
-      _note(
-        'an app is already attached; stop it before starting another',
-        isError: true,
-      );
-      return;
-    }
-
-    final configured = state.config.runCommand;
-    final target = state.targets.isEmpty ? null : state.targets.first;
-    state.launchCommand = configured.isNotEmpty
-        ? configured
-        : target?.runCommand;
-    state.launchCommandSource = configured.isNotEmpty
-        ? 'the plugin config'
-        : (target?.ownerPaneId == null
-              ? null
-              : '${target!.ownerPaneId} scrollback');
-    state.launchPaneId = target?.ownerPaneId;
-    state.launchPaneFree = false;
-
-    // Where to run it, most reliable first. A monorepo is the reason this is not
-    // simply the checkout root: `--target lib/main.dart` only resolves inside
-    // the package that owns it, and that package is where flutter must start.
-    final root = state.repoRoot;
-    final command = state.launchCommand;
-    state.launchCwd = state.config.runCwd.isNotEmpty
-        ? state.config.runCwd
-        : target?.runCwd ??
-              (root == null
-                  ? null
-                  : flutterProjectDir(
-                      root,
-                      target: command == null ? null : targetOf(command),
-                    ));
-
-    final pane = target?.ownerPaneId;
-    if (pane != null) {
-      try {
-        for (final candidate in await cli.panes()) {
-          if (candidate.paneId != pane) continue;
-          state.launchPaneFree = looksIdle(candidate);
-        }
-      } on HerdrCliException {
-        state.launchPaneFree = false;
-      }
-    }
-    state.launchWhere = state.launchPaneFree
-        ? LaunchWhere.previousPane
-        : (state.config.runPlacement == 'tab'
-              ? LaunchWhere.tab
-              : LaunchWhere.split);
-    state.overlay = Overlay.launch;
-    _schedule();
-  }
-
-  /// Start the app where the launch screen says, then let discovery find it.
-  Future<void> _launch() async {
-    final command = state.launchCommand;
-    if (command == null || state.launching) return;
-    if (state.launchCwd == null) {
-      _note(
-        'cannot tell which package to run: set run_cwd in the plugin config',
-        isError: true,
-      );
-      return;
-    }
-    final parts = command.split(RegExp(r'\s+')).where((p) => p.isNotEmpty);
-    state.launching = true;
-    _schedule();
-    try {
-      final pane = switch (state.launchWhere) {
-        LaunchWhere.previousPane => state.launchPaneId,
-        LaunchWhere.split => await cli.splitPane(
-          paneId: cli.selfPaneId ?? '',
-          direction: state.config.runDirection,
-          cwd: state.launchCwd,
-        ),
-        LaunchWhere.tab => await cli.createTab(
-          workspaceId: cli.selfWorkspaceId ?? '',
-          cwd: state.launchCwd,
-          label: 'run',
-        ),
-      };
-      if (pane == null) {
-        _note('no pane to launch in', isError: true);
-        return;
-      }
-      await cli.runInPane(pane, [
-        // The pane may sit at the checkout root while the app lives in a
-        // package, so the directory is part of what gets run.
-        'cd',
-        state.launchCwd!,
-        '&&',
-        ...parts,
-      ]);
-      state.overlay = Overlay.none;
-      _note('launched in $pane, waiting for it to announce itself');
-      // The app needs a moment to build before it announces anything, and the
-      // backoff would otherwise wait out its own delay before looking.
-      _dead.clear();
-      _retryDelay = _retryFloor;
-    } on HerdrCliException catch (error) {
-      _note('launch failed: ${error.message}', isError: true);
-    } finally {
-      state.launching = false;
-      _schedule();
-    }
-  }
-
   Future<void> _onMouse(Mouse mouse) async {
     final bodyRow = mouse.row - 1;
     final lastBodyRow = terminal.rows - 3;
@@ -521,7 +403,6 @@ class App {
             1 << 30,
           );
         case Overlay.targets:
-        case Overlay.launch:
           await _overlayKey(Key(up ? 'up' : 'down'));
           return;
         case Overlay.help:
@@ -561,11 +442,6 @@ class App {
     final item = bodyRow < state.hitRows.length ? state.hitRows[bodyRow] : null;
     if (item == null) return;
     switch (state.overlay) {
-      case Overlay.launch:
-        final where = LaunchWhere.values[item];
-        if (where != LaunchWhere.previousPane || state.launchPaneFree) {
-          state.launchWhere = where;
-        }
       case Overlay.targets:
         state.targetCursor = item;
       case Overlay.toggles:
@@ -627,8 +503,6 @@ class App {
         state.overlay = Overlay.toggles;
         unawaited(state.session?.refreshToggles() ?? Future.value());
         _schedule();
-      case 'L':
-        await _openLaunch();
       case 'D':
         state.overlay = Overlay.targets;
         state.targetCursor = state.targetIndex;
@@ -869,36 +743,6 @@ class App {
             await _reload(full: false);
           case 'R':
             await _reload(full: true);
-        }
-        _schedule();
-      case Overlay.launch:
-        switch (key.name) {
-          case 'esc':
-          case 'q':
-          case 'L':
-            state.overlay = Overlay.none;
-          case 'p':
-            if (state.launchPaneFree) {
-              state.launchWhere = LaunchWhere.previousPane;
-            }
-          case 's':
-            state.launchWhere = LaunchWhere.split;
-          case 't':
-            state.launchWhere = LaunchWhere.tab;
-          case 'j':
-          case 'down':
-          case 'k':
-          case 'up':
-            final order = [
-              if (state.launchPaneFree) LaunchWhere.previousPane,
-              LaunchWhere.split,
-              LaunchWhere.tab,
-            ];
-            final at = order.indexOf(state.launchWhere);
-            final step = key.name == 'j' || key.name == 'down' ? 1 : -1;
-            state.launchWhere = order[(at + step) % order.length];
-          case 'enter':
-            await _launch();
         }
         _schedule();
       case Overlay.help:

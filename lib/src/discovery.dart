@@ -7,8 +7,6 @@ class AppTarget {
     this.deviceName,
     this.ownerPaneId,
     this.ownerTitle,
-    this.runCommand,
-    this.runCwd,
     this.origin = 'pane',
   });
 
@@ -24,14 +22,6 @@ class AppTarget {
   /// an owner the sidebar can watch and inspect but not reload.
   final String? ownerPaneId;
   final String? ownerTitle;
-
-  /// The command that pane used to start the app, for relaunching it.
-  final String? runCommand;
-
-  /// The directory the app was running from, when it differed from the pane's
-  /// own. In a monorepo that is the package, not the checkout root, and it is
-  /// only observable while the process is alive.
-  final String? runCwd;
 
   /// Where the URI came from: a pane's output, or the plugin config.
   final String origin;
@@ -95,39 +85,6 @@ ServiceAnnouncement? extractAnnouncement(String output) {
     }
   }
   return best;
-}
-
-// `run` must end the word on whitespace or end of line: the tool's own help
-// prints `d Detach (terminate "flutter run" but leave application running)`,
-// which is prose about a command, not one.
-final _flutterRun = RegExp(r'(flutter\s+run(?=\s|$).*)$');
-
-/// The `flutter run` invocation a pane used to start its app, read back from
-/// its scrollback.
-///
-/// Only the flutter command itself is matched, because that is what every
-/// Flutter project has in common whatever wraps it: a version manager, a task
-/// runner, a make target or a shell alias all end up printing the invocation
-/// they expand to. A project that needs its wrapper rather than the expansion
-/// says so with `run_command` in the plugin config.
-///
-/// The last one wins, so a pane that ran several things replays the most recent.
-String? extractRunCommand(String output) {
-  String? found;
-  for (final raw in output.split('\n')) {
-    final run = _flutterRun.firstMatch(raw.trimRight());
-    if (run != null) found = run.group(1)!.trim();
-  }
-  return found;
-}
-
-/// The directory a pane's foreground process runs in, when it is not the pane's
-/// own. Equal values mean nothing is running below the shell, so there is
-/// nothing to learn.
-String? _runCwd(PaneInfo pane) {
-  if (pane.foregroundCwd.isEmpty) return null;
-  if (pane.foregroundCwd == pane.cwd) return null;
-  return pane.foregroundCwd;
 }
 
 /// Rank panes by how likely they are to host the app this sidebar is about:
@@ -250,8 +207,6 @@ Future<List<AppTarget>> discoverTargets(
           deviceName: announcement.deviceName,
           ownerPaneId: pane.paneId,
           ownerTitle: pane.title,
-          runCommand: extractRunCommand(output),
-          runCwd: _runCwd(pane),
           origin: targets[existing].origin,
         );
       }
@@ -263,8 +218,6 @@ Future<List<AppTarget>> discoverTargets(
         deviceName: announcement.deviceName,
         ownerPaneId: pane.paneId,
         ownerTitle: pane.title,
-        runCommand: extractRunCommand(output),
-        runCwd: _runCwd(pane),
       ),
     );
   }
