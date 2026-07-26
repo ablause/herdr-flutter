@@ -36,6 +36,11 @@ class App {
   Timer? _retryTimer;
   bool _rendering = false;
 
+  /// Set on the way out. Closing the session makes it report a disconnection,
+  /// which would otherwise schedule one last frame and paint it over the shell
+  /// after the alternate screen is gone.
+  bool _stopped = false;
+
   /// The project directory, so reports and the tree show short paths.
   static String? findRepoRoot([Directory? from]) {
     var directory = from ?? Directory.current;
@@ -59,6 +64,7 @@ class App {
     unawaited(_discover());
     _scheduleRetry();
     await _done.future;
+    _stopped = true;
     _retryTimer?.cancel();
     _renderTimer?.cancel();
     _statusTimer?.cancel();
@@ -111,7 +117,7 @@ class App {
 
   /// Coalesce redraws: a busy app can post hundreds of log events a second.
   void _schedule() {
-    if (_rendering) return;
+    if (_rendering || _stopped) return;
     _rendering = true;
     _renderTimer = Timer(const Duration(milliseconds: 25), () {
       _rendering = false;
