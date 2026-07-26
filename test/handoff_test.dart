@@ -8,15 +8,14 @@ PaneInfo pane(
   String workspace = 'w1',
   String? agent,
   String? label,
-}) =>
-    PaneInfo.fromJson({
-      'pane_id': id,
-      'tab_id': tab,
-      'workspace_id': workspace,
-      'terminal_title': id,
-      'label': label,
-      'agent': agent,
-    });
+}) => PaneInfo.fromJson({
+  'pane_id': id,
+  'tab_id': tab,
+  'workspace_id': workspace,
+  'terminal_title': id,
+  'label': label,
+  'agent': agent,
+});
 
 void main() {
   group('pickAgent', () {
@@ -95,7 +94,9 @@ void main() {
     });
 
     test('ignores panes from another workspace', () {
-      final panes = [pane('w2:p1', workspace: 'w2', tab: 't1', agent: 'claude')];
+      final panes = [
+        pane('w2:p1', workspace: 'w2', tab: 't1', agent: 'claude'),
+      ];
       expect(
         pickAgent(panes, tabId: 't1', workspaceId: 'w1', selfPaneId: 'w1:p9'),
         isNull,

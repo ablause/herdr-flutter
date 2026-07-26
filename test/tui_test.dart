@@ -135,8 +135,7 @@ void main() {
     });
 
     test('stderr lines are tagged apart from stdout', () {
-      final state = connectedState()
-        ..addLog(LogLine(LogSource.stderr, 'boom'));
+      final state = connectedState()..addLog(LogLine(LogSource.stderr, 'boom'));
       final frame = plain(renderFrame(state, 60, 12));
       expect(frame.any((line) => line.contains('err boom')), isTrue);
     });
@@ -147,27 +146,38 @@ void main() {
         ..errors.add(
           ErrorItem.fromEventData({
             'description': 'Exception caught by widgets library',
-            'renderedErrorText':
-                'boom at file:///repo/lib/main.dart:12:3',
+            'renderedErrorText': 'boom at file:///repo/lib/main.dart:12:3',
             'properties': [
               {'level': 'summary', 'description': 'Null check operator used'},
             ],
           }),
         );
       final frame = plain(renderFrame(state, 60, 12));
-      expect(frame.any((line) => line.contains('Null check operator used')), isTrue);
+      expect(
+        frame.any((line) => line.contains('Null check operator used')),
+        isTrue,
+      );
       expect(frame.any((line) => line.contains('lib/main.dart:12')), isTrue);
     });
 
-    test('the empty log view explains itself instead of showing a blank pane', () {
-      final frame = plain(renderFrame(connectedState(), 60, 12));
-      expect(frame.any((line) => line.contains('Waiting for output')), isTrue);
-    });
+    test(
+      'the empty log view explains itself instead of showing a blank pane',
+      () {
+        final frame = plain(renderFrame(connectedState(), 60, 12));
+        expect(
+          frame.any((line) => line.contains('Waiting for output')),
+          isTrue,
+        );
+      },
+    );
 
     test('with no app at all the body says how to get one', () {
       final state = AppState(config: const PluginConfig());
       final frame = plain(renderFrame(state, 60, 14));
-      expect(frame.any((line) => line.contains('No running Flutter app')), isTrue);
+      expect(
+        frame.any((line) => line.contains('No running Flutter app')),
+        isTrue,
+      );
       expect(frame.any((line) => line.contains('rescan')), isTrue);
     });
 

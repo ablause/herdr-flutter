@@ -31,7 +31,11 @@ class DebugToggle {
     DebugToggle('p', 'Paint guides', 'ext.flutter.debugPaint'),
     DebugToggle('b', 'Baselines', 'ext.flutter.debugPaintBaselinesEnabled'),
     DebugToggle('R', 'Repaint rainbow', 'ext.flutter.repaintRainbow'),
-    DebugToggle('o', 'Performance overlay', 'ext.flutter.showPerformanceOverlay'),
+    DebugToggle(
+      'o',
+      'Performance overlay',
+      'ext.flutter.showPerformanceOverlay',
+    ),
     DebugToggle('a', 'Debug banner', 'ext.flutter.debugAllowBanner'),
     DebugToggle('i', 'Oversized images', 'ext.flutter.invertOversizedImages'),
     DebugToggle('w', 'Select widget mode', Ext.selectMode),
@@ -404,11 +408,7 @@ class FlutterSession {
   Future<Map<String, Object?>?> fetchDetails(String valueId) async {
     final response = await _callExtension(
       Ext.detailsSubtree,
-      args: {
-        'arg': valueId,
-        'objectGroup': _objectGroup,
-        'subtreeDepth': '2',
-      },
+      args: {'arg': valueId, 'objectGroup': _objectGroup, 'subtreeDepth': '2'},
     );
     final result = response?['result'];
     if (result is! Map) return null;

@@ -57,7 +57,10 @@ final _announcementPatterns = <RegExp>[
     multiLine: true,
   ),
   // dart run and flutter test: no device name.
-  RegExp(r'The Dart VM Service is listening on\s*(https?://\S+)', multiLine: true),
+  RegExp(
+    r'The Dart VM Service is listening on\s*(https?://\S+)',
+    multiLine: true,
+  ),
   // flutter run -d chrome announces the websocket directly.
   RegExp(r'Debug service listening on\s*(wss?://\S+)', multiLine: true),
 ];
@@ -90,7 +93,10 @@ ServiceAnnouncement? extractAnnouncement(String output) {
 ///
 /// A stale announcement in the scrollback is the normal case after an app
 /// exits, and connecting to it would hang the sidebar on startup.
-Future<bool> isReachable(Uri uri, {Duration timeout = const Duration(milliseconds: 400)}) async {
+Future<bool> isReachable(
+  Uri uri, {
+  Duration timeout = const Duration(milliseconds: 400),
+}) async {
   try {
     final socket = await Socket.connect(uri.host, uri.port, timeout: timeout);
     socket.destroy();
@@ -123,8 +129,11 @@ List<PaneInfo> candidatePanes(
       .where((pane) => selfLabel == null || pane.label != selfLabel)
       .toList();
   candidates.sort((a, b) {
-    final rank = _paneRank(a, tabId, workspaceId)
-        .compareTo(_paneRank(b, tabId, workspaceId));
+    final rank = _paneRank(
+      a,
+      tabId,
+      workspaceId,
+    ).compareTo(_paneRank(b, tabId, workspaceId));
     if (rank != 0) return rank;
     return a.paneId.compareTo(b.paneId);
   });
@@ -180,7 +189,8 @@ Future<List<AppTarget>> discoverTargets(
     if (!seen.add(key)) {
       // Already known, but a pane beats the config as the reload owner.
       final existing = targets.indexWhere(
-        (target) => '${target.serviceUri.host}:${target.serviceUri.port}' == key,
+        (target) =>
+            '${target.serviceUri.host}:${target.serviceUri.port}' == key,
       );
       if (existing >= 0 && targets[existing].ownerPaneId == null) {
         targets[existing] = AppTarget(

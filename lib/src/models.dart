@@ -14,7 +14,7 @@ enum LogSource {
 
 class LogLine {
   LogLine(this.source, this.text, {DateTime? time})
-      : time = time ?? DateTime.now();
+    : time = time ?? DateTime.now();
 
   final DateTime time;
   final LogSource source;
@@ -35,10 +35,7 @@ class ErrorItem {
     this.location,
   });
 
-  factory ErrorItem.fromEventData(
-    Map<String, Object?> data, {
-    DateTime? time,
-  }) {
+  factory ErrorItem.fromEventData(Map<String, Object?> data, {DateTime? time}) {
     final rendered = data['renderedErrorText'];
     final renderedText = rendered is String && rendered.trim().isNotEmpty
         ? rendered.trimRight()
@@ -49,7 +46,8 @@ class ErrorItem {
       node: data,
       renderedText: renderedText,
       errorsSinceReload: data['errorsSinceReload'] as int? ?? 0,
-      location: _firstLocation(data, 4) ??
+      location:
+          _firstLocation(data, 4) ??
           locationFromText(renderedText) ??
           locationFromText(renderNode(data, maxDepth: 6)),
     );
@@ -75,7 +73,10 @@ class ErrorItem {
     return '$renderedText\n\n${renderNode(node)}';
   }
 
-  static CreationLocation? _firstLocation(Map<String, Object?> node, int depth) {
+  static CreationLocation? _firstLocation(
+    Map<String, Object?> node,
+    int depth,
+  ) {
     final own = creationLocation(node);
     if (own != null) return own;
     if (depth <= 0) return null;
@@ -102,9 +103,9 @@ class WidgetNode {
   });
 
   factory WidgetNode.fromJson(Map<String, Object?> json, {int depth = 0}) {
-    final children = childNodes(json)
-        .map((child) => WidgetNode.fromJson(child, depth: depth + 1))
-        .toList();
+    final children = childNodes(
+      json,
+    ).map((child) => WidgetNode.fromJson(child, depth: depth + 1)).toList();
     return WidgetNode(
       description: nodeTitle(json),
       valueId: json['valueId'] as String?,

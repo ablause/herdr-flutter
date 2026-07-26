@@ -116,8 +116,7 @@ Map<String, Object?>? _findByLevel(
 bool _isRule(String line) =>
     line.length > 8 && RegExp(r'^[═─=\-]+$').hasMatch(line);
 
-String _oneLine(String text) =>
-    text.replaceAll(RegExp(r'\s+'), ' ').trim();
+String _oneLine(String text) => text.replaceAll(RegExp(r'\s+'), ' ').trim();
 
 /// A node and its subtree as indented text, close to what the console prints.
 String renderNode(

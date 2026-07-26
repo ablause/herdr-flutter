@@ -11,7 +11,8 @@ import 'package:herdr_flutter/src/session.dart';
 
 const _version = '0.1.0';
 
-const _usage = '''
+const _usage =
+    '''
 herdr-flutter $_version
 
   herdr-flutter                      run the sidebar (needs a terminal)
@@ -167,7 +168,9 @@ Future<int> _probe(
     stdout.writeln('${key.padRight(18)} $value');
   });
   if (errors.isNotEmpty) {
-    stdout.writeln('\nfirst error:\n${renderNode(errors.first.node, maxDepth: 4)}');
+    stdout.writeln(
+      '\nfirst error:\n${renderNode(errors.first.node, maxDepth: 4)}',
+    );
   }
   return 0;
 }

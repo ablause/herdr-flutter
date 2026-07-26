@@ -10,10 +10,7 @@ import 'tui/style.dart';
 /// test by inspecting the strings it produces.
 List<String> renderFrame(AppState state, int width, int height) {
   if (width < 8 || height < 4) return List.filled(height, '');
-  final rows = <String>[
-    _header(state, width),
-    _tabs(state, width),
-  ];
+  final rows = <String>[_header(state, width), _tabs(state, width)];
   final bodyHeight = height - 3;
   rows.addAll(_body(state, width, bodyHeight));
   while (rows.length < height - 1) {
@@ -80,7 +77,10 @@ List<String> _body(AppState state, int width, int height) {
     Overlay.toggles => _pad(_togglesBody(state, width), height),
     Overlay.targets => _pad(_targetsBody(state, width), height),
     Overlay.errorDetail => _pad(_errorDetailBody(state, width, height), height),
-    Overlay.widgetDetail => _pad(_widgetDetailBody(state, width, height), height),
+    Overlay.widgetDetail => _pad(
+      _widgetDetailBody(state, width, height),
+      height,
+    ),
     Overlay.none => _pad(_viewBody(state, width, height), height),
   };
 }
@@ -186,7 +186,11 @@ List<String> _errorsBody(AppState state, int width, int height) {
       '',
       _text('  No errors since the sidebar attached', width, Style.dim),
       '',
-      _text('  Flutter.Error events land here as they happen.', width, Style.dim),
+      _text(
+        '  Flutter.Error events land here as they happen.',
+        width,
+        Style.dim,
+      ),
     ];
   }
   final rows = <String>[];
@@ -195,9 +199,11 @@ List<String> _errorsBody(AppState state, int width, int height) {
     0,
     (state.errors.length - height).clamp(0, state.errors.length),
   );
-  for (var index = start;
-      index < state.errors.length && rows.length < height;
-      index++) {
+  for (
+    var index = start;
+    index < state.errors.length && rows.length < height;
+    index++
+  ) {
     final error = state.errors[index];
     final isSelected = index == selected;
     final line = LineBuilder(width);
@@ -231,7 +237,10 @@ List<String> _inspectorBody(AppState state, int width, int height) {
       '',
       _text('  Inspector unavailable', width, Style.boldYellow),
       '',
-      ..._wrap(error, width - 4).map((line) => _text('  $line', width, Style.dim)),
+      ..._wrap(
+        error,
+        width - 4,
+      ).map((line) => _text('  $line', width, Style.dim)),
     ];
   }
   if (state.flatTree.isEmpty) {
@@ -248,9 +257,11 @@ List<String> _inspectorBody(AppState state, int width, int height) {
     0,
     (state.flatTree.length - height).clamp(0, state.flatTree.length),
   );
-  for (var index = start;
-      index < state.flatTree.length && rows.length < height;
-      index++) {
+  for (
+    var index = start;
+    index < state.flatTree.length && rows.length < height;
+    index++
+  ) {
     final node = state.flatTree[index];
     final isSelected = index == selected;
     final line = LineBuilder(width);
@@ -259,7 +270,7 @@ List<String> _inspectorBody(AppState state, int width, int height) {
         ? ' '
         : (id != null && state.collapsed.contains(id) ? '▸' : '▾');
     line.add(isSelected ? '›' : ' ', Style.boldCyan);
-    line.add('  ' * (node.depth.clamp(0, (width ~/ 4)) ), Style.none);
+    line.add('  ' * (node.depth.clamp(0, (width ~/ 4))), Style.none);
     line.add('$marker ', Style.brightBlack);
     line.addEllipsized(
       node.description,
@@ -311,15 +322,15 @@ List<String> _infoBody(AppState state, int width) {
   }
   rows.add('');
   entry('hot reload', session?.canReload == true ? 'protocol' : 'unavailable');
-  entry('hot restart', session?.canRestart == true ? 'protocol' : 'unavailable');
+  entry(
+    'hot restart',
+    session?.canRestart == true ? 'protocol' : 'unavailable',
+  );
   entry(
     'inspector',
     session?.inspectorReady == true ? 'ready' : 'not registered',
   );
-  entry(
-    'frames seen',
-    session == null ? null : '${session.frames}',
-  );
+  entry('frames seen', session == null ? null : '${session.frames}');
   final build = session?.lastBuildMs;
   final raster = session?.lastRasterMs;
   if (build != null || raster != null) {
@@ -408,7 +419,9 @@ List<String> _targetsBody(AppState state, int width) {
     rows.add(detail.build());
   }
   rows.add('');
-  rows.add(_text(' enter  attach     D  rescan     esc  close', width, Style.dim));
+  rows.add(
+    _text(' enter  attach     D  rescan     esc  close', width, Style.dim),
+  );
   return rows;
 }
 
@@ -418,7 +431,13 @@ List<String> _errorDetailBody(AppState state, int width, int height) {
   final lines = <String>[];
   final location = error.location;
   if (location != null) {
-    lines.add(_text(' ${location.display(root: state.repoRoot)}', width, Style.boldCyan));
+    lines.add(
+      _text(
+        ' ${location.display(root: state.repoRoot)}',
+        width,
+        Style.boldCyan,
+      ),
+    );
     lines.add('');
   }
   for (final raw in const LineSplitterLite().split(error.detail)) {
@@ -432,19 +451,25 @@ List<String> _errorDetailBody(AppState state, int width, int height) {
 List<String> _widgetDetailBody(AppState state, int width, int height) {
   final node = state.selectedNode;
   if (node == null) return [_text('  no widget selected', width, Style.dim)];
-  final lines = <String>[
-    _text(' ${node.description}', width, Style.bold),
-  ];
+  final lines = <String>[_text(' ${node.description}', width, Style.bold)];
   final location = node.location;
   if (location != null) {
-    lines.add(_text(' ${location.display(root: state.repoRoot)}', width, Style.boldCyan));
+    lines.add(
+      _text(
+        ' ${location.display(root: state.repoRoot)}',
+        width,
+        Style.boldCyan,
+      ),
+    );
   }
   lines.add('');
   final details = state.nodeDetails;
   if (details == null) {
     lines.add(_text('  Fetching properties…', width, Style.dim));
   } else {
-    for (final raw in const LineSplitterLite().split(renderNode(details, maxDepth: 4))) {
+    for (final raw in const LineSplitterLite().split(
+      renderNode(details, maxDepth: 4),
+    )) {
       for (final part in _wrap(raw, width - 1)) {
         lines.add(_text(' $part', width, Style.none));
       }

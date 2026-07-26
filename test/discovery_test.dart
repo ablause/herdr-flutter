@@ -28,7 +28,8 @@ A Dart VM Service on iPhone 17 is available at: http://127.0.0.1:64095/bbb=/
     });
 
     test('reads the dart run and flutter test wording', () {
-      const output = 'The Dart VM Service is listening on http://127.0.0.1:8181/ws=/';
+      const output =
+          'The Dart VM Service is listening on http://127.0.0.1:8181/ws=/';
       final found = extractAnnouncement(output);
       expect(found!.uri.port, 8181);
       expect(found.deviceName, isNull);
@@ -57,17 +58,16 @@ A Dart VM Service on iPhone 17 is available at: http://127.0.0.1:64095/bbb=/
       String workspace = 'w1',
       String? agent,
       String? label,
-    }) =>
-        PaneInfo.fromJson({
-          'pane_id': id,
-          'tab_id': tab,
-          'workspace_id': workspace,
-          'cwd': '/repo',
-          'foreground_cwd': '/repo',
-          'terminal_title': id,
-          'label': label,
-          'agent': agent,
-        });
+    }) => PaneInfo.fromJson({
+      'pane_id': id,
+      'tab_id': tab,
+      'workspace_id': workspace,
+      'cwd': '/repo',
+      'foreground_cwd': '/repo',
+      'terminal_title': id,
+      'label': label,
+      'agent': agent,
+    });
 
     test('drops agents, the sidebar itself and other flutter sidebars', () {
       final panes = [
@@ -86,24 +86,32 @@ A Dart VM Service on iPhone 17 is available at: http://127.0.0.1:64095/bbb=/
       expect(result.map((pane) => pane.paneId), ['w1:p2']);
     });
 
-    test('ranks the same tab first, then the same workspace, then the rest', () {
-      final panes = [
-        pane('w2:p1', tab: 't9', workspace: 'w2'),
-        pane('w1:p5', tab: 't2', workspace: 'w1'),
-        pane('w1:p2', tab: 't1', workspace: 'w1'),
-      ];
-      final result = candidatePanes(
-        panes,
-        selfPaneId: 'w1:p9',
-        tabId: 't1',
-        workspaceId: 'w1',
-      );
-      expect(result.map((pane) => pane.paneId), ['w1:p2', 'w1:p5', 'w2:p1']);
-    });
+    test(
+      'ranks the same tab first, then the same workspace, then the rest',
+      () {
+        final panes = [
+          pane('w2:p1', tab: 't9', workspace: 'w2'),
+          pane('w1:p5', tab: 't2', workspace: 'w1'),
+          pane('w1:p2', tab: 't1', workspace: 'w1'),
+        ];
+        final result = candidatePanes(
+          panes,
+          selfPaneId: 'w1:p9',
+          tabId: 't1',
+          workspaceId: 'w1',
+        );
+        expect(result.map((pane) => pane.paneId), ['w1:p2', 'w1:p5', 'w2:p1']);
+      },
+    );
   });
 
   test('parsePanes tolerates a foreign envelope', () {
-    expect(parsePanes({'error': {'code': 'nope'}}), isEmpty);
+    expect(
+      parsePanes({
+        'error': {'code': 'nope'},
+      }),
+      isEmpty,
+    );
     expect(parsePanes({'result': {}}), isEmpty);
   });
 }

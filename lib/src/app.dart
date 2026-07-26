@@ -20,9 +20,9 @@ class App {
     Terminal? terminal,
     Handoff? handoff,
     String? repoRoot,
-  })  : terminal = terminal ?? Terminal(),
-        handoff = handoff ?? Handoff(cli),
-        state = AppState(config: config, repoRoot: repoRoot ?? findRepoRoot());
+  }) : terminal = terminal ?? Terminal(),
+       handoff = handoff ?? Handoff(cli),
+       state = AppState(config: config, repoRoot: repoRoot ?? findRepoRoot());
 
   final HerdrCli cli;
   final Terminal terminal;
@@ -57,7 +57,8 @@ class App {
     unawaited(_discover());
     _retryTimer = Timer.periodic(const Duration(seconds: 3), (_) {
       final session = state.session;
-      final stale = session == null ||
+      final stale =
+          session == null ||
           session.state == SessionState.disconnected ||
           session.state == SessionState.failed;
       if (stale && !state.discovering) unawaited(_discover(quiet: true));
@@ -120,12 +121,14 @@ class App {
       }
       final current = state.session;
       final currentUri = state.target?.serviceUri.toString();
-      final sameApp = current != null &&
+      final sameApp =
+          current != null &&
           current.isConnected &&
           targets.any((target) => target.serviceUri.toString() == currentUri);
       if (sameApp) {
-        state.targetIndex = targets
-            .indexWhere((target) => target.serviceUri.toString() == currentUri);
+        state.targetIndex = targets.indexWhere(
+          (target) => target.serviceUri.toString() == currentUri,
+        );
         _schedule();
         return;
       }
@@ -488,8 +491,10 @@ class App {
     switch (key.name) {
       case 'j':
       case 'down':
-        state.nodeIndex = (state.nodeIndex + 1)
-            .clamp(0, (state.flatTree.length - 1).clamp(0, 1 << 30));
+        state.nodeIndex = (state.nodeIndex + 1).clamp(
+          0,
+          (state.flatTree.length - 1).clamp(0, 1 << 30),
+        );
       case 'k':
       case 'up':
         state.nodeIndex = (state.nodeIndex - 1).clamp(0, 1 << 30);
@@ -556,8 +561,10 @@ class App {
             state.overlay = Overlay.none;
           case 'j':
           case 'down':
-            state.targetCursor = (state.targetCursor + 1)
-                .clamp(0, (state.targets.length - 1).clamp(0, 1 << 30));
+            state.targetCursor = (state.targetCursor + 1).clamp(
+              0,
+              (state.targets.length - 1).clamp(0, 1 << 30),
+            );
           case 'k':
           case 'up':
             state.targetCursor = (state.targetCursor - 1).clamp(0, 1 << 30);

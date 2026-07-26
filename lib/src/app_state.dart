@@ -31,8 +31,9 @@ class AppState {
   bool discovering = false;
   String? discoveryError;
 
-  AppTarget? get target =>
-      targetIndex >= 0 && targetIndex < targets.length ? targets[targetIndex] : null;
+  AppTarget? get target => targetIndex >= 0 && targetIndex < targets.length
+      ? targets[targetIndex]
+      : null;
 
   View view = View.logs;
   Overlay overlay = Overlay.none;
@@ -68,8 +69,9 @@ class AppState {
       ? null
       : flatTree[nodeIndex.clamp(0, flatTree.length - 1)];
 
-  List<LogLine> get visibleLogs =>
-      filter.isEmpty ? logs : logs.where((line) => line.matches(filter)).toList();
+  List<LogLine> get visibleLogs => filter.isEmpty
+      ? logs
+      : logs.where((line) => line.matches(filter)).toList();
 
   void addLog(LogLine line) {
     logs.add(line);

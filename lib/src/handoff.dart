@@ -7,10 +7,10 @@ enum HandoffRefusal { noAgent, several, failed }
 
 class HandoffResult {
   HandoffResult.sent(this.agentPaneId, this.reportPath)
-      : refusal = null,
-        message = null;
+    : refusal = null,
+      message = null;
   HandoffResult.refused(this.refusal, this.message, {this.reportPath})
-      : agentPaneId = null;
+    : agentPaneId = null;
 
   final String? agentPaneId;
   final String? reportPath;
@@ -58,9 +58,10 @@ PaneInfo? pickAgent(
 /// stack trace with a widget subtree is far too long to sit in a prompt box.
 class Handoff {
   Handoff(this.cli, {String? stateDir, Map<String, String>? env})
-      : _stateDir = stateDir ??
-            (env ?? Platform.environment)['HERDR_PLUGIN_STATE_DIR'] ??
-            Directory.systemTemp.path;
+    : _stateDir =
+          stateDir ??
+          (env ?? Platform.environment)['HERDR_PLUGIN_STATE_DIR'] ??
+          Directory.systemTemp.path;
 
   final HerdrCli cli;
   final String _stateDir;
@@ -80,13 +81,16 @@ class Handoff {
   /// Keep the last 50 reports so the state dir cannot grow without bound.
   void _prune() {
     if (!reportDir.existsSync()) return;
-    final files = reportDir
-        .listSync()
-        .whereType<File>()
-        .where((file) => file.path.endsWith('.md'))
-        .toList()
-      ..sort((a, b) => a.path.compareTo(b.path));
-    for (final file in files.take(files.length - 50 < 0 ? 0 : files.length - 50)) {
+    final files =
+        reportDir
+            .listSync()
+            .whereType<File>()
+            .where((file) => file.path.endsWith('.md'))
+            .toList()
+          ..sort((a, b) => a.path.compareTo(b.path));
+    for (final file in files.take(
+      files.length - 50 < 0 ? 0 : files.length - 50,
+    )) {
       try {
         file.deleteSync();
       } on FileSystemException {
@@ -178,7 +182,10 @@ Future<String?> copyToClipboard(String text) async {
         ];
   for (final command in candidates) {
     try {
-      final process = await Process.start(command.first, command.skip(1).toList());
+      final process = await Process.start(
+        command.first,
+        command.skip(1).toList(),
+      );
       process.stdin.write(text);
       await process.stdin.close();
       if (await process.exitCode == 0) return null;

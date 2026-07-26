@@ -17,21 +17,33 @@ Map<String, Object?> loadFixture() {
 void main() {
   test('the summary is the ErrorSummary node, not the wrapper description', () {
     final error = ErrorItem.fromEventData(loadFixture());
-    expect(error.summary, 'A RenderFlex overflowed by 750 pixels on the right.');
+    expect(
+      error.summary,
+      'A RenderFlex overflowed by 750 pixels on the right.',
+    );
   });
 
-  test('the location comes out of the text, since errors carry no creationLocation', () {
-    final error = ErrorItem.fromEventData(loadFixture());
-    expect(error.location, isNotNull);
-    expect(error.location!.file, 'file:///Users/dev/app/lib/main.dart');
-    expect(error.location!.line, 29);
-    expect(error.location!.display(root: '/Users/dev/app'), 'lib/main.dart:29');
-  });
+  test(
+    'the location comes out of the text, since errors carry no creationLocation',
+    () {
+      final error = ErrorItem.fromEventData(loadFixture());
+      expect(error.location, isNotNull);
+      expect(error.location!.file, 'file:///Users/dev/app/lib/main.dart');
+      expect(error.location!.line, 29);
+      expect(
+        error.location!.display(root: '/Users/dev/app'),
+        'lib/main.dart:29',
+      );
+    },
+  );
 
   test('the first error keeps the console rendering', () {
     final error = ErrorItem.fromEventData(loadFixture());
     expect(error.errorsSinceReload, 0);
-    expect(error.renderedText, contains('EXCEPTION CAUGHT BY RENDERING LIBRARY'));
+    expect(
+      error.renderedText,
+      contains('EXCEPTION CAUGHT BY RENDERING LIBRARY'),
+    );
     expect(error.detail, error.renderedText);
   });
 
@@ -97,9 +109,6 @@ void main() {
 
   test('locationFromText ignores text without a dart file reference', () {
     expect(locationFromText('no file here'), isNull);
-    expect(
-      locationFromText('at file:///a/b.dart:12:3 something')!.line,
-      12,
-    );
+    expect(locationFromText('at file:///a/b.dart:12:3 something')!.line, 12);
   });
 }

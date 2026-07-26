@@ -30,7 +30,8 @@ class PaneInfo {
     workspaceId: json['workspace_id'] as String? ?? '',
     cwd: json['cwd'] as String? ?? '',
     foregroundCwd: json['foreground_cwd'] as String? ?? '',
-    title: json['terminal_title_stripped'] as String? ??
+    title:
+        json['terminal_title_stripped'] as String? ??
         json['terminal_title'] as String? ??
         '',
     label: json['label'] as String?,
@@ -60,10 +61,9 @@ class PaneInfo {
 /// `HERDR_BIN_PATH` for plugin processes.
 class HerdrCli {
   HerdrCli({String? binPath, Map<String, String>? env})
-      : _env = env ?? Platform.environment,
-        _bin = binPath ??
-            (env ?? Platform.environment)['HERDR_BIN_PATH'] ??
-            'herdr';
+    : _env = env ?? Platform.environment,
+      _bin =
+          binPath ?? (env ?? Platform.environment)['HERDR_BIN_PATH'] ?? 'herdr';
 
   final String _bin;
   final Map<String, String> _env;
@@ -93,7 +93,9 @@ class HerdrCli {
     }
     final Object? decoded = jsonDecode(stdoutText.split('\n').last);
     if (decoded is! Map<String, Object?>) {
-      throw HerdrCliException('herdr ${args.join(' ')} returned unexpected JSON');
+      throw HerdrCliException(
+        'herdr ${args.join(' ')} returned unexpected JSON',
+      );
     }
     final Object? error = decoded['error'];
     if (error is Map<String, Object?>) {

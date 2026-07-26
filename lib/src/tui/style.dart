@@ -22,7 +22,8 @@ class Style {
   static const boldCyan = Style('1;36');
   static const boldReverse = Style('1;7');
 
-  String call(String text) => _codes.isEmpty ? text : '\x1b[${_codes}m$text\x1b[0m';
+  String call(String text) =>
+      _codes.isEmpty ? text : '\x1b[${_codes}m$text\x1b[0m';
 }
 
 /// A single terminal row, assembled from styled fragments and never wider than

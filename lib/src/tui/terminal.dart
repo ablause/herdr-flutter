@@ -21,8 +21,8 @@ class Key {
 /// frame are written, which keeps a log tail smooth without any flicker.
 class Terminal {
   Terminal({Stdin? input, Stdout? output})
-      : _input = input ?? stdin,
-        _output = output ?? stdout;
+    : _input = input ?? stdin,
+      _output = output ?? stdout;
 
   final Stdin _input;
   final Stdout _output;

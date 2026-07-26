@@ -150,7 +150,8 @@ class PluginConfig {
   ) {
     final value = values[key];
     if (value == null) return fallback;
-    if (value is! String) throw ConfigException('$source: $key must be a string');
+    if (value is! String)
+      throw ConfigException('$source: $key must be a string');
     return value;
   }
 
@@ -162,7 +163,8 @@ class PluginConfig {
   ) {
     final value = values[key];
     if (value == null) return fallback;
-    if (value is! bool) throw ConfigException('$source: $key must be a boolean');
+    if (value is! bool)
+      throw ConfigException('$source: $key must be a boolean');
     return value;
   }
 
@@ -174,7 +176,8 @@ class PluginConfig {
   ) {
     final value = values[key];
     if (value == null) return fallback;
-    if (value is! int) throw ConfigException('$source: $key must be an integer');
+    if (value is! int)
+      throw ConfigException('$source: $key must be an integer');
     return value;
   }
 }
