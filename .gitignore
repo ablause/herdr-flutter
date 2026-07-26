@@ -1,0 +1,5 @@
+.dart_tool/
+.packages
+bin/herdr-flutter
+*.exe
+.DS_Store

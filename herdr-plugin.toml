@@ -1,0 +1,44 @@
+id = "ablause.herdr-flutter"
+name = "Herdr Flutter"
+version = "0.1.0"
+min_herdr_version = "0.7.0"
+platforms = ["macos", "linux"]
+description = "Watch, restart and inspect a running Flutter app in a sidebar beside the agent. Attaches to the Dart VM Service of whatever flutter run is already going in the workspace, shows its logs, its structured errors and its widget tree, hot reloads it, and hands any of that to the agent as a report."
+
+# Compiles the Dart entry point to bin/herdr-flutter with the Dart SDK that
+# ships with Flutter. Skipped by `herdr plugin link`, so for a local checkout run
+# `bash herdr/install.sh` once yourself.
+[[build]]
+command = ["bash", "herdr/install.sh"]
+
+# The pane's cwd is the project under development, not the plugin root, so the
+# binary is invoked by absolute path under HERDR_PLUGIN_ROOT.
+[[panes]]
+id = "sidebar"
+title = "flutter"
+placement = "split"
+command = ["sh", "-c", "exec \"$HERDR_PLUGIN_ROOT/bin/herdr-flutter\""]
+
+[[actions]]
+id = "toggle"
+title = "Herdr Flutter: toggle sidebar"
+contexts = ["pane", "workspace"]
+command = ["bash", "herdr/sidebar.sh", "toggle"]
+
+[[actions]]
+id = "open"
+title = "Herdr Flutter: open sidebar"
+contexts = ["pane", "workspace"]
+command = ["bash", "herdr/sidebar.sh", "open"]
+
+[[actions]]
+id = "close"
+title = "Herdr Flutter: close sidebar"
+contexts = ["pane", "workspace"]
+command = ["bash", "herdr/sidebar.sh", "close"]
+
+# Off by default: a fresh worktree has no running app yet, and an empty sidebar
+# is noise. Set auto_open = true in the plugin config to enable it.
+[[events]]
+on = "worktree.created"
+command = ["bash", "herdr/sidebar.sh", "auto-open"]
