@@ -3,9 +3,9 @@
 A herdr sidebar for a running Flutter app: its logs, its errors, its widget tree,
 and one key to hand any of that to the agent working beside it.
 
-It attaches to the Dart VM Service of a `flutter run` that is already going. It
-never launches or owns the app, so the run keeps living in its own pane with its
-own output, and closing the sidebar changes nothing about it.
+It attaches to the Dart VM Service of a `flutter run`. It never owns the app: the
+run lives in its own pane with its own output, whether you started it yourself or
+asked the sidebar to, so closing the sidebar changes nothing about it.
 
 ## What it does
 
@@ -70,16 +70,18 @@ A Dart VM Service on iPhone 17 is available at: http://127.0.0.1:64095/gmHGW1_v0
 ```
 
 The sidebar reads the scrollback of the panes around it, newest announcement
-first, same tab before same workspace before the rest, and attaches to the first
-one whose port still answers. Agent panes, its own pane and other herdr-flutter
-sidebars are never read. A stale announcement from an app that has exited is
-skipped rather than hung on.
+first, same tab before same workspace before the rest. Agent panes, its own pane
+and other herdr-flutter sidebars are never read.
 
-So the app can run anywhere: a plain pane, a task runner, a `flutter run` you
-started before the sidebar existed. Nothing has to be launched through the plugin.
-`D` lists what was found and switches between several running apps. If the app
-does not live in a herdr pane at all, point the sidebar at it with `service_uri`
-in the plugin config.
+Finding an app opens no connection: discovery only reads text, and attaching is
+the only thing that dials, with a deadline so a stale port forward fails instead
+of hanging. An address that did not answer is left alone until you ask for a
+rescan, rather than being reopened on every pass.
+
+So the app can run anywhere: a plain pane, a wrapper of your choosing, a
+`flutter run` you started before the sidebar existed. `D` lists what was found
+and switches between several running apps. If the app does not live in a herdr
+pane at all, point the sidebar at it with `service_uri` in the plugin config.
 
 ## Keys
 
