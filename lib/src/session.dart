@@ -98,7 +98,12 @@ class FlutterSession {
       final wsUri = target.serviceUri.scheme.startsWith('ws')
           ? target.serviceUri
           : convertToWebSocketUrl(serviceProtocolUrl: target.serviceUri);
-      final service = await vmServiceConnectUri(wsUri.toString());
+      // An orphaned port forward accepts the connection and then never answers,
+      // which is exactly what a stale iproxy tunnel to a device looks like, so
+      // the handshake needs a deadline of its own.
+      final service = await vmServiceConnectUri(
+        wsUri.toString(),
+      ).timeout(const Duration(seconds: 8));
       _service = service;
       service.onDone.then((_) {
         if (state != SessionState.failed) {
@@ -111,6 +116,11 @@ class FlutterSession {
       _setState(SessionState.connected);
       unawaited(_loadFlutterVersion());
       unawaited(refreshToggles());
+    } on TimeoutException {
+      failure =
+          'the service did not answer within eight seconds, '
+          'which is what a stale port forward looks like';
+      _setState(SessionState.failed);
     } on Exception catch (error) {
       failure = _short(error);
       _setState(SessionState.failed);

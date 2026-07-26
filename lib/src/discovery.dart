@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'herdr_cli.dart';
 
 /// A running Flutter app the sidebar can attach to.
@@ -89,23 +87,6 @@ ServiceAnnouncement? extractAnnouncement(String output) {
   return best;
 }
 
-/// Whether something still listens on the announced port.
-///
-/// A stale announcement in the scrollback is the normal case after an app
-/// exits, and connecting to it would hang the sidebar on startup.
-Future<bool> isReachable(
-  Uri uri, {
-  Duration timeout = const Duration(milliseconds: 400),
-}) async {
-  try {
-    final socket = await Socket.connect(uri.host, uri.port, timeout: timeout);
-    socket.destroy();
-    return true;
-  } on Exception {
-    return false;
-  }
-}
-
 /// Rank panes by how likely they are to host the app this sidebar is about:
 /// same tab first, then same workspace, then everything else.
 int _paneRank(PaneInfo pane, String? tabId, String? workspaceId) {
@@ -162,10 +143,14 @@ List<PaneInfo> candidatePanes(
   return candidates;
 }
 
-/// Every reachable app the sidebar could attach to, best candidate first.
+/// Every app the sidebar could attach to, best candidate first.
 ///
-/// A configured URI is tried first and never dropped for being unreachable, so
-/// a deliberate override reports its own failure instead of vanishing.
+/// Discovery opens no connection of its own: it only reads text. It used to
+/// probe each announced port with a TCP connect and an immediate destroy, which
+/// put a connect and an abrupt reset on the debug tunnel on every pass, and for
+/// a device that tunnel is iproxy over usbmuxd. It also accepted an orphaned
+/// forward as alive, since such a forward answers the handshake and then never
+/// speaks again. Attaching is now the only test, and it is the caller's job.
 Future<List<AppTarget>> discoverTargets(
   HerdrCli cli, {
   String? configuredUri,
@@ -227,7 +212,6 @@ Future<List<AppTarget>> discoverTargets(
       }
       continue;
     }
-    if (!await isReachable(announcement.uri)) continue;
     targets.add(
       AppTarget(
         serviceUri: announcement.uri,

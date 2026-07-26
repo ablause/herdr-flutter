@@ -74,6 +74,11 @@ class App {
   static const _retryCeiling = Duration(seconds: 30);
   Duration _retryDelay = _retryFloor;
 
+  /// URIs whose attach failed. The sidebar stops touching them until the user
+  /// asks for a rescan, so a stale announcement in a pane's scrollback is tried
+  /// once and then left alone rather than reopened on every pass.
+  final Set<String> _dead = {};
+
   /// Look again for an app to attach to, backing off while nothing is there.
   ///
   /// The retry is cheap on purpose: it only reads panes that look busy, and it
@@ -133,7 +138,10 @@ class App {
     state.discovering = true;
     if (!quiet) {
       state.discoveryError = null;
-      // A rescan the user asked for restarts the backoff: they are watching.
+      // A rescan the user asked for restarts the backoff and forgives every
+      // address that failed before: they are watching, and they may have just
+      // fixed whatever was wrong.
+      _dead.clear();
       _retryDelay = _retryFloor;
     }
     _schedule();
@@ -167,7 +175,17 @@ class App {
         _schedule();
         return;
       }
-      await _attach(0, quiet: quiet);
+      final next = targets.indexWhere(
+        (target) => !_dead.contains(target.serviceUri.toString()),
+      );
+      if (next < 0) {
+        state.discoveryError =
+            'the app announced at ${targets.first.serviceUri.host}:'
+            '${targets.first.serviceUri.port} did not answer. Press D to try again.';
+        _schedule();
+        return;
+      }
+      await _attach(next, quiet: quiet);
     } on Exception catch (error) {
       state.discovering = false;
       state.firstScanDone = true;
@@ -210,6 +228,7 @@ class App {
       if (!quiet) _note('attached to ${target.label}');
       if (state.view == View.inspector) unawaited(_fetchTree());
     } else if (session.state == SessionState.failed) {
+      _dead.add(target.serviceUri.toString());
       state.addLog(
         LogLine(LogSource.session, 'Attach failed: ${session.failure}'),
       );
