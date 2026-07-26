@@ -388,6 +388,96 @@ class App {
   /// The top row selects a view, the wheel scrolls or moves the selection
   /// depending on what the body shows, and a click inside a list picks the row
   /// under the pointer.
+  /// Work out what a launch would run and where, then show it for confirmation.
+  ///
+  /// Nothing is decided silently: the command comes from a pane's scrollback or
+  /// from the config, and the placement defaults to the pane the app last ran in
+  /// only when that pane is free.
+  Future<void> _openLaunch() async {
+    final session = state.session;
+    if (session != null && session.isConnected) {
+      _note(
+        'an app is already attached; stop it before starting another',
+        isError: true,
+      );
+      return;
+    }
+
+    final configured = state.config.runCommand;
+    final target = state.targets.isEmpty ? null : state.targets.first;
+    state.launchCommand = configured.isNotEmpty
+        ? configured
+        : target?.runCommand;
+    state.launchCommandSource = configured.isNotEmpty
+        ? 'the plugin config'
+        : (target?.ownerPaneId == null
+              ? null
+              : '${target!.ownerPaneId} scrollback');
+    state.launchPaneId = target?.ownerPaneId;
+    state.launchCwd = state.repoRoot;
+    state.launchPaneFree = false;
+
+    final pane = target?.ownerPaneId;
+    if (pane != null) {
+      try {
+        for (final candidate in await cli.panes()) {
+          if (candidate.paneId != pane) continue;
+          state.launchPaneFree = looksIdle(candidate);
+          if (candidate.cwd.isNotEmpty) state.launchCwd = candidate.cwd;
+        }
+      } on HerdrCliException {
+        state.launchPaneFree = false;
+      }
+    }
+    state.launchWhere = state.launchPaneFree
+        ? LaunchWhere.previousPane
+        : (state.config.runPlacement == 'tab'
+              ? LaunchWhere.tab
+              : LaunchWhere.split);
+    state.overlay = Overlay.launch;
+    _schedule();
+  }
+
+  /// Start the app where the launch screen says, then let discovery find it.
+  Future<void> _launch() async {
+    final command = state.launchCommand;
+    if (command == null || state.launching) return;
+    final parts = command.split(RegExp(r'\s+')).where((p) => p.isNotEmpty);
+    state.launching = true;
+    _schedule();
+    try {
+      final pane = switch (state.launchWhere) {
+        LaunchWhere.previousPane => state.launchPaneId,
+        LaunchWhere.split => await cli.splitPane(
+          paneId: cli.selfPaneId ?? '',
+          direction: state.config.runDirection,
+          cwd: state.launchCwd,
+        ),
+        LaunchWhere.tab => await cli.createTab(
+          workspaceId: cli.selfWorkspaceId ?? '',
+          cwd: state.launchCwd,
+          label: 'run',
+        ),
+      };
+      if (pane == null) {
+        _note('no pane to launch in', isError: true);
+        return;
+      }
+      await cli.runInPane(pane, parts.toList());
+      state.overlay = Overlay.none;
+      _note('launched in $pane, waiting for it to announce itself');
+      // The app needs a moment to build before it announces anything, and the
+      // backoff would otherwise wait out its own delay before looking.
+      _dead.clear();
+      _retryDelay = _retryFloor;
+    } on HerdrCliException catch (error) {
+      _note('launch failed: ${error.message}', isError: true);
+    } finally {
+      state.launching = false;
+      _schedule();
+    }
+  }
+
   Future<void> _onMouse(Mouse mouse) async {
     final bodyRow = mouse.row - 1;
     final lastBodyRow = terminal.rows - 3;
@@ -403,6 +493,7 @@ class App {
             1 << 30,
           );
         case Overlay.targets:
+        case Overlay.launch:
           await _overlayKey(Key(up ? 'up' : 'down'));
           return;
         case Overlay.help:
@@ -442,6 +533,11 @@ class App {
     final item = bodyRow < state.hitRows.length ? state.hitRows[bodyRow] : null;
     if (item == null) return;
     switch (state.overlay) {
+      case Overlay.launch:
+        final where = LaunchWhere.values[item];
+        if (where != LaunchWhere.previousPane || state.launchPaneFree) {
+          state.launchWhere = where;
+        }
       case Overlay.targets:
         state.targetCursor = item;
       case Overlay.toggles:
@@ -503,6 +599,8 @@ class App {
         state.overlay = Overlay.toggles;
         unawaited(state.session?.refreshToggles() ?? Future.value());
         _schedule();
+      case 'L':
+        await _openLaunch();
       case 'D':
         state.overlay = Overlay.targets;
         state.targetCursor = state.targetIndex;
@@ -743,6 +841,36 @@ class App {
             await _reload(full: false);
           case 'R':
             await _reload(full: true);
+        }
+        _schedule();
+      case Overlay.launch:
+        switch (key.name) {
+          case 'esc':
+          case 'q':
+          case 'L':
+            state.overlay = Overlay.none;
+          case 'p':
+            if (state.launchPaneFree) {
+              state.launchWhere = LaunchWhere.previousPane;
+            }
+          case 's':
+            state.launchWhere = LaunchWhere.split;
+          case 't':
+            state.launchWhere = LaunchWhere.tab;
+          case 'j':
+          case 'down':
+          case 'k':
+          case 'up':
+            final order = [
+              if (state.launchPaneFree) LaunchWhere.previousPane,
+              LaunchWhere.split,
+              LaunchWhere.tab,
+            ];
+            final at = order.indexOf(state.launchWhere);
+            final step = key.name == 'j' || key.name == 'down' ? 1 : -1;
+            state.launchWhere = order[(at + step) % order.length];
+          case 'enter':
+            await _launch();
         }
         _schedule();
       case Overlay.help:

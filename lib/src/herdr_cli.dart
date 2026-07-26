@@ -149,6 +149,72 @@ class HerdrCli {
   Future<void> focusPane(String paneId) async {
     await Process.run(_bin, ['agent', 'focus', paneId]);
   }
+
+  /// Run a command in an existing pane, as if it had been typed there.
+  Future<void> runInPane(String paneId, List<String> command) async {
+    await _json(['pane', 'run', paneId, ...command]);
+  }
+
+  /// Split [paneId] and return the new pane's id.
+  Future<String> splitPane({
+    required String paneId,
+    required String direction,
+    String? cwd,
+  }) async {
+    final envelope = await _json([
+      'pane',
+      'split',
+      '--pane',
+      paneId,
+      '--direction',
+      direction,
+      if (cwd != null && cwd.isNotEmpty) ...['--cwd', cwd],
+    ]);
+    return _firstPaneId(envelope) ??
+        (throw HerdrCliException('herdr pane split returned no pane id'));
+  }
+
+  /// Create a tab in [workspaceId] and return the id of the pane it contains.
+  Future<String> createTab({
+    required String workspaceId,
+    String? cwd,
+    String? label,
+  }) async {
+    final envelope = await _json([
+      'tab',
+      'create',
+      '--workspace',
+      workspaceId,
+      if (cwd != null && cwd.isNotEmpty) ...['--cwd', cwd],
+      if (label != null && label.isNotEmpty) ...['--label', label],
+    ]);
+    return _firstPaneId(envelope) ??
+        (throw HerdrCliException('herdr tab create returned no pane id'));
+  }
+}
+
+/// The first `pane_id` anywhere in a response.
+///
+/// Split and tab creation report their new pane at different depths, and the
+/// shape is not part of any contract, so the id is looked up rather than
+/// addressed by path.
+String? _firstPaneId(Object? node) {
+  if (node is Map) {
+    final own = node['pane_id'];
+    if (own is String && own.isNotEmpty) return own;
+    for (final value in node.values) {
+      final found = _firstPaneId(value);
+      if (found != null) return found;
+    }
+    return null;
+  }
+  if (node is List) {
+    for (final value in node) {
+      final found = _firstPaneId(value);
+      if (found != null) return found;
+    }
+  }
+  return null;
 }
 
 /// Panes out of a `herdr pane list` envelope. Split out for testing.

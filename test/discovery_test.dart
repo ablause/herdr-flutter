@@ -90,10 +90,10 @@ A Dart VM Service on iPhone 17 is available at: http://127.0.0.1:64095/bbb=/
     test('busyOnly drops panes sitting at a shell prompt', () {
       final panes = [
         pane('w1:p1', title: 'flutter run -d macos'),
-        pane('w1:p2', title: 'ablause@Alexandres-MacBook-Pro-2:~/Projects/app'),
+        pane('w1:p2', title: 'dev@host:~/Projects/app'),
         pane('w1:p3', title: 'zsh'),
         pane('w1:p4', title: '   '),
-        pane('w1:p5', title: 'task mobile:run:dev'),
+        pane('w1:p5', title: 'make run'),
       ];
       final busy = candidatePanes(
         panes,
@@ -110,7 +110,7 @@ A Dart VM Service on iPhone 17 is available at: http://127.0.0.1:64095/bbb=/
 
     test('looksIdle reads the foreground title', () {
       expect(looksIdle(pane('p', title: 'flutter run -d macos')), isFalse);
-      expect(looksIdle(pane('p', title: 'task mobile:run:dev')), isFalse);
+      expect(looksIdle(pane('p', title: 'make run')), isFalse);
       expect(looksIdle(pane('p', title: 'user@host:~/code')), isTrue);
       expect(looksIdle(pane('p', title: '-zsh')), isTrue);
       expect(looksIdle(pane('p', title: '   ')), isTrue);
@@ -133,6 +133,51 @@ A Dart VM Service on iPhone 17 is available at: http://127.0.0.1:64095/bbb=/
         expect(result.map((pane) => pane.paneId), ['w1:p2', 'w1:p5', 'w2:p1']);
       },
     );
+  });
+
+  group('extractRunCommand', () {
+    test('reads the invocation whatever wrapper printed it', () {
+      const output = '''
+\u279c  app git:(main) x some-runner dev
+some-runner: [dev] flutter run --flavor development --target lib/main.dart
+Launching lib/main.dart on iPhone 17 in debug mode...
+''';
+      expect(
+        extractRunCommand(output),
+        'flutter run --flavor development --target lib/main.dart',
+      );
+    });
+
+    test('reads a command typed straight after a prompt', () {
+      expect(
+        extractRunCommand('~ % flutter run -d macos'),
+        'flutter run -d macos',
+      );
+    });
+
+    test('is not fooled by the tool talking about the command', () {
+      const help = '''
+Flutter run key commands.
+r Hot reload.
+d Detach (terminate "flutter run" but leave application running).
+''';
+      expect(extractRunCommand(help), isNull);
+    });
+
+    test('the most recent invocation wins', () {
+      const output = '''
+flutter run -d chrome
+flutter run -d macos --flavor staging
+''';
+      expect(
+        extractRunCommand(output),
+        'flutter run -d macos --flavor staging',
+      );
+    });
+
+    test('returns null when the pane never ran one', () {
+      expect(extractRunCommand('pnpm dev\nready on 3000'), isNull);
+    });
   });
 
   test('parsePanes tolerates a foreign envelope', () {

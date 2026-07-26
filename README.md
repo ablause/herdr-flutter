@@ -98,6 +98,7 @@ in the plugin config.
 | `d` | properties of the selected widget |
 | `/` `c` | filter the log, clear the log |
 | `D` | pick an app to attach to |
+| `L` | launch the app, when none is running |
 | `?` `q` | keys, quit |
 
 The mouse works too: click a tab to switch view, click a row in the errors,
@@ -108,6 +109,26 @@ Capturing the mouse is what takes click-drag text selection away from the pane.
 Most terminals still select with shift held down, `y` copies the current capture
 to the clipboard anyway, and `mouse = false` in the plugin config gives selection
 back and leaves the keyboard in charge.
+
+## Launching the app
+
+The sidebar does not own the app it watches, and launching does not change that:
+it asks herdr to run the command in a pane, and then finds the app the same way
+it finds any other. Closing the sidebar still leaves the run alone.
+
+`L` shows what would run, where, and why, and nothing happens until you confirm:
+
+- **the command** comes from the `flutter run` invocation in a pane's scrollback,
+  so a project that starts through a version manager, a task runner or a make
+  target needs no configuration: whatever the wrapper, the invocation it expands
+  to is in the output. `run_command` overrides it when the wrapper itself matters.
+- **the place** defaults to the pane the app last ran in, when that pane is back
+  at a prompt. Nothing is created, the layout does not move, and the previous
+  run's output stays above the new one. Otherwise you pick a split or a tab on
+  the spot, with `run_placement` as the default.
+
+Launching is refused while an app is attached: two runs on one device means two
+port forwards fighting over the same tunnel.
 
 ## Sending to the agent
 
@@ -138,6 +159,9 @@ log_limit = 5000             # lines kept in memory
 follow_logs = true           # stick to the newest line
 pane_lines = 3000            # scrollback read per pane while discovering
 mouse = true                 # clickable tabs and rows, at the cost of selection
+run_command = ""             # how the app starts, when scrollback cannot tell
+run_placement = "split"      # split | tab, when no previous run pane is free
+run_direction = "down"       # right | down, split only
 ```
 
 Unknown keys and out-of-range values are errors, not silently ignored lines: every

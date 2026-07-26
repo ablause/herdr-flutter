@@ -23,6 +23,9 @@ class PluginConfig {
     this.followLogs = true,
     this.paneLines = 3000,
     this.mouse = true,
+    this.runCommand = '',
+    this.runPlacement = 'split',
+    this.runDirection = 'down',
   });
 
   final String togglePlacement;
@@ -44,7 +47,15 @@ class PluginConfig {
   /// text selection away from the pane, so it can be turned off.
   final bool mouse;
 
+  /// The command that starts the app, when the scrollback cannot tell.
+  final String runCommand;
+
+  /// Where a launch opens a pane, when there is no previous run pane to reuse.
+  final String runPlacement;
+  final String runDirection;
+
   static const _placements = {'split', 'overlay', 'zoomed', 'tab'};
+  static const _runPlacements = {'split', 'tab'};
   static const _directions = {'right', 'down'};
 
   static const _keys = {
@@ -56,6 +67,9 @@ class PluginConfig {
     'follow_logs',
     'pane_lines',
     'mouse',
+    'run_command',
+    'run_placement',
+    'run_direction',
   };
 
   /// Only the keys the sidebar scripts consume, so bash never parses TOML.
@@ -107,6 +121,18 @@ class PluginConfig {
         '$source: toggle_direction must be one of ${_directions.join(', ')}',
       );
     }
+    final runPlacement = _string(values, 'run_placement', 'split', source);
+    if (!_runPlacements.contains(runPlacement)) {
+      throw ConfigException(
+        '$source: run_placement must be one of ${_runPlacements.join(', ')}',
+      );
+    }
+    final runDirection = _string(values, 'run_direction', 'down', source);
+    if (!_directions.contains(runDirection)) {
+      throw ConfigException(
+        '$source: run_direction must be one of ${_directions.join(', ')}',
+      );
+    }
     final logLimit = _int(values, 'log_limit', 5000, source);
     if (logLimit < 100) {
       throw ConfigException('$source: log_limit must be at least 100');
@@ -125,6 +151,9 @@ class PluginConfig {
       followLogs: _bool(values, 'follow_logs', true, source),
       paneLines: paneLines,
       mouse: _bool(values, 'mouse', true, source),
+      runCommand: _string(values, 'run_command', '', source),
+      runPlacement: runPlacement,
+      runDirection: runDirection,
     );
   }
 
