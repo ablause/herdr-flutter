@@ -28,7 +28,7 @@ String _header(AppState state, int width) {
   final session = state.session;
   if (target == null) {
     line.addEllipsized(
-      state.discovering ? 'scanning panes…' : 'no running app',
+      state.scanVisible ? 'scanning panes…' : 'no running app',
       Style.dim,
     );
   } else {
@@ -40,7 +40,7 @@ String _header(AppState state, int width) {
 }
 
 (String, Style) _stateIndicator(AppState state, FlutterSession? session) {
-  if (state.discovering) return ('scanning', Style.dim);
+  if (state.scanVisible) return ('scanning', Style.dim);
   if (session == null) return ('detached', Style.dim);
   return switch (session.state) {
     SessionState.connecting => ('connecting', Style.yellow),
@@ -101,7 +101,7 @@ List<String> _viewBody(AppState state, int width, int height) {
 List<String> _disconnectedBody(AppState state, int width) {
   final lines = <String>[''];
   final session = state.session;
-  if (state.discovering) {
+  if (state.scanVisible) {
     lines.add(_text('  Looking for a Dart VM Service…', width, Style.dim));
     return lines;
   }

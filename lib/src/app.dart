@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'app_state.dart';
 import 'config.dart';
@@ -55,14 +56,7 @@ class App {
     terminal.resizes.listen((_) => _schedule());
     _schedule();
     unawaited(_discover());
-    _retryTimer = Timer.periodic(const Duration(seconds: 3), (_) {
-      final session = state.session;
-      final stale =
-          session == null ||
-          session.state == SessionState.disconnected ||
-          session.state == SessionState.failed;
-      if (stale && !state.discovering) unawaited(_discover(quiet: true));
-    });
+    _scheduleRetry();
     await _done.future;
     _retryTimer?.cancel();
     _renderTimer?.cancel();
@@ -73,6 +67,40 @@ class App {
 
   void _quit() {
     if (!_done.isCompleted) _done.complete();
+  }
+
+  static const _retryFloor = Duration(seconds: 3);
+  static const _retryCeiling = Duration(seconds: 30);
+  Duration _retryDelay = _retryFloor;
+
+  /// Look again for an app to attach to, backing off while nothing is there.
+  ///
+  /// The retry is cheap on purpose: it only reads panes that look busy, and it
+  /// never repaints the body, so an idle sidebar neither flickers nor spawns a
+  /// read for every pane in the session. An app that was attached and went away
+  /// is worth finding fast, so the delay resets whenever one is known.
+  void _scheduleRetry() {
+    _retryTimer?.cancel();
+    _retryTimer = Timer(_retryDelay, () async {
+      final session = state.session;
+      final stale =
+          session == null ||
+          session.state == SessionState.disconnected ||
+          session.state == SessionState.failed;
+      if (stale && !state.discovering) {
+        await _discover(quiet: true, busyOnly: true);
+      }
+      final found = state.session?.isConnected ?? false;
+      _retryDelay = found
+          ? _retryFloor
+          : Duration(
+              seconds: math.min(
+                _retryDelay.inSeconds * 2,
+                _retryCeiling.inSeconds,
+              ),
+            );
+      if (!_done.isCompleted) _scheduleRetry();
+    });
   }
 
   /// Coalesce redraws: a busy app can post hundreds of log events a second.
@@ -99,19 +127,25 @@ class App {
     _schedule();
   }
 
-  Future<void> _discover({bool quiet = false}) async {
+  Future<void> _discover({bool quiet = false, bool busyOnly = false}) async {
     if (state.discovering) return;
     state.discovering = true;
-    if (!quiet) state.discoveryError = null;
+    if (!quiet) {
+      state.discoveryError = null;
+      // A rescan the user asked for restarts the backoff: they are watching.
+      _retryDelay = _retryFloor;
+    }
     _schedule();
     try {
       final targets = await discoverTargets(
         cli,
         configuredUri: state.config.serviceUri,
         paneLines: state.config.paneLines,
+        busyOnly: busyOnly,
       );
       state.targets = targets;
       state.discovering = false;
+      state.firstScanDone = true;
       if (targets.isEmpty) {
         state.discoveryError = cli.available
             ? null
@@ -135,6 +169,7 @@ class App {
       await _attach(0, quiet: quiet);
     } on Exception catch (error) {
       state.discovering = false;
+      state.firstScanDone = true;
       state.discoveryError = error.toString();
       _schedule();
     }

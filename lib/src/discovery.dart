@@ -115,18 +115,40 @@ int _paneRank(PaneInfo pane, String? tabId, String? workspaceId) {
   return 2;
 }
 
+final _shellPromptTitle = RegExp(r'^\S+@\S+:');
+const _shellNames = {'zsh', '-zsh', 'bash', '-bash', 'fish', 'sh', 'login'};
+
+/// Whether a pane is sitting at a shell prompt with nothing running.
+///
+/// herdr sets a pane's title from its foreground process, so an idle shell shows
+/// `user@host:path` or the shell's own name. Such a pane cannot be hosting a
+/// `flutter run`, and skipping its scrollback is what keeps a background rescan
+/// from spawning a read for every pane in the session.
+bool looksIdle(PaneInfo pane) {
+  final title = pane.title.trim();
+  if (title.isEmpty) return true;
+  if (_shellNames.contains(title)) return true;
+  if (_shellPromptTitle.hasMatch(title)) return true;
+  return false;
+}
+
 /// Panes worth reading: not an agent, not this sidebar, not another sidebar.
+///
+/// With [busyOnly] the panes that look idle are dropped as well, which is the
+/// cheap sweep used by the periodic retry.
 List<PaneInfo> candidatePanes(
   List<PaneInfo> panes, {
   String? selfPaneId,
   String? tabId,
   String? workspaceId,
   String? selfLabel,
+  bool busyOnly = false,
 }) {
   final candidates = panes
       .where((pane) => !pane.isAgent)
       .where((pane) => pane.paneId != selfPaneId)
       .where((pane) => selfLabel == null || pane.label != selfLabel)
+      .where((pane) => !busyOnly || !looksIdle(pane))
       .toList();
   candidates.sort((a, b) {
     final rank = _paneRank(
@@ -149,6 +171,7 @@ Future<List<AppTarget>> discoverTargets(
   String? configuredUri,
   String selfLabel = 'flutter',
   int paneLines = 3000,
+  bool busyOnly = false,
 }) async {
   final targets = <AppTarget>[];
   final seen = <String>{};
@@ -174,6 +197,7 @@ Future<List<AppTarget>> discoverTargets(
     tabId: cli.selfTabId,
     workspaceId: cli.selfWorkspaceId,
     selfLabel: selfLabel,
+    busyOnly: busyOnly,
   );
 
   for (final pane in candidates) {

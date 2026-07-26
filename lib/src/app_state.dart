@@ -31,6 +31,14 @@ class AppState {
   bool discovering = false;
   String? discoveryError;
 
+  /// Set once a discovery has finished. A periodic rescan after that must not
+  /// swap the body back to a scanning message: the pane would repaint on every
+  /// retry, which reads as a flicker.
+  bool firstScanDone = false;
+
+  /// True only while a scan the user is waiting on is in flight.
+  bool get scanVisible => discovering && !firstScanDone;
+
   AppTarget? get target => targetIndex >= 0 && targetIndex < targets.length
       ? targets[targetIndex]
       : null;

@@ -58,13 +58,14 @@ A Dart VM Service on iPhone 17 is available at: http://127.0.0.1:64095/bbb=/
       String workspace = 'w1',
       String? agent,
       String? label,
+      String? title,
     }) => PaneInfo.fromJson({
       'pane_id': id,
       'tab_id': tab,
       'workspace_id': workspace,
       'cwd': '/repo',
       'foreground_cwd': '/repo',
-      'terminal_title': id,
+      'terminal_title': title ?? id,
       'label': label,
       'agent': agent,
     });
@@ -84,6 +85,35 @@ A Dart VM Service on iPhone 17 is available at: http://127.0.0.1:64095/bbb=/
         selfLabel: 'flutter',
       );
       expect(result.map((pane) => pane.paneId), ['w1:p2']);
+    });
+
+    test('busyOnly drops panes sitting at a shell prompt', () {
+      final panes = [
+        pane('w1:p1', title: 'flutter run -d macos'),
+        pane('w1:p2', title: 'ablause@Alexandres-MacBook-Pro-2:~/Projects/app'),
+        pane('w1:p3', title: 'zsh'),
+        pane('w1:p4', title: '   '),
+        pane('w1:p5', title: 'task mobile:run:dev'),
+      ];
+      final busy = candidatePanes(
+        panes,
+        tabId: 't1',
+        workspaceId: 'w1',
+        busyOnly: true,
+      );
+      expect(busy.map((pane) => pane.paneId), ['w1:p1', 'w1:p5']);
+
+      // Without the filter every non-agent pane is still read, which is what an
+      // explicit rescan does.
+      expect(candidatePanes(panes, tabId: 't1', workspaceId: 'w1').length, 5);
+    });
+
+    test('looksIdle reads the foreground title', () {
+      expect(looksIdle(pane('p', title: 'flutter run -d macos')), isFalse);
+      expect(looksIdle(pane('p', title: 'task mobile:run:dev')), isFalse);
+      expect(looksIdle(pane('p', title: 'user@host:~/code')), isTrue);
+      expect(looksIdle(pane('p', title: '-zsh')), isTrue);
+      expect(looksIdle(pane('p', title: '   ')), isTrue);
     });
 
     test(
