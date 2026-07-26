@@ -152,6 +152,11 @@ instead of changing behaviour quietly.
   and a frame stack, which is a different and much larger tool; DevTools and the
   IDE debuggers already do it well.
 - No profiling, no memory view, no timeline.
+- It does not start the app. This was built and then removed: without breakpoints
+  a launch key replaces typing a command in a pane, which up-arrow and enter
+  already do in two keystrokes, and it dragged in a confirmation screen, a
+  placement question and a heuristic for finding the right package in a monorepo.
+  The sidebar attaches to a run; the pane owns it.
 - The widget inspector is a debug-build feature. A profile or release build shows
   logs and errors but no tree.
 - Structured errors are the framework default on non-web debug builds. On the web
