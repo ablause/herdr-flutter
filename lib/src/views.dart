@@ -181,22 +181,31 @@ List<String> _logDisplayLines(AppState state, int width) {
   final lines = <String>[];
   for (final entry in state.visibleLogs) {
     final prefix = showTime ? '${_clock(entry.time)} ' : '';
-    final style = switch (entry.source) {
+    final tagStyle = switch (entry.source) {
       LogSource.stderr => Style.red,
       LogSource.developer => Style.cyan,
       LogSource.session => Style.magenta,
       LogSource.stdout => Style.none,
     };
-    final body = _wrap(entry.text, width - prefix.length - 4);
+    // The colour of the text comes from what the app said about the line: the
+    // level of a developer.log record, or the stream it came out of.
+    final textStyle = entry.isSevere || entry.source == LogSource.stderr
+        ? Style.red
+        : (entry.isWarning ? Style.yellow : Style.none);
+    final name = entry.name;
+    final label = name == null ? '' : '$name ';
+    final indent = prefix.length + 4;
+    final body = _wrap(entry.text, width - indent - label.length);
     for (final (index, part) in body.indexed) {
       final line = LineBuilder(width);
       if (index == 0) {
         line.add(prefix, Style.brightBlack);
-        line.add('${entry.source.tag} ', style);
+        line.add('${entry.source.tag} ', tagStyle);
+        if (label.isNotEmpty) line.add(label, Style.boldCyan);
       } else {
-        line.add(' ' * (prefix.length + 4), Style.none);
+        line.add(' ' * indent, Style.none);
       }
-      line.add(part, entry.source == LogSource.stderr ? Style.red : Style.none);
+      line.add(part, textStyle);
       lines.add(line.build());
     }
   }
@@ -618,6 +627,18 @@ String _text(String text, int width, Style style) {
 List<String> _wrap(String text, int width) {
   if (width <= 1) return [text];
   final source = text.replaceAll('\t', '  ');
+  // A line that arrived already coloured is measured on its visible characters
+  // and cut between them, never inside an escape sequence.
+  if (hasEscapes(source)) {
+    final wrapped = <String>[];
+    var left = source;
+    while (visibleWidth(left) > width) {
+      wrapped.add(takeVisible(left, width));
+      left = dropVisible(left, width);
+    }
+    if (left.isNotEmpty) wrapped.add(left);
+    return wrapped;
+  }
   if (source.runes.length <= width) return [source];
   final lines = <String>[];
   var rest = source;

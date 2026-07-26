@@ -40,10 +40,19 @@ class LineBuilder {
 
   void add(String text, [Style style = Style.none]) {
     if (full || text.isEmpty) return;
-    final runes = text.replaceAll('\t', '  ').runes.toList();
+    final source = text.replaceAll('\t', '  ');
+    // Text that carries its own colours keeps them, and its escape bytes must
+    // not count towards the width or the row would wrap early.
+    if (hasEscapes(source)) {
+      final clipped = takeVisible(source, remaining);
+      _used += visibleWidth(clipped);
+      _buffer.write('$clipped\x1b[0m');
+      return;
+    }
+    final runes = source.runes.toList();
     final clipped = runes.length > remaining
         ? String.fromCharCodes(runes.take(remaining))
-        : text;
+        : source;
     _used += clipped.runes.length;
     _buffer.write(style(clipped));
   }
@@ -86,6 +95,69 @@ class LineBuilder {
     }
     return _buffer.toString();
   }
+}
+
+/// Whether the text carries SGR escape sequences of its own.
+bool hasEscapes(String text) => text.contains('\x1b[');
+
+/// The first [count] visible characters, escape sequences carried along.
+///
+/// A sequence is never cut in half, and it does not count towards the budget, so
+/// a line that arrives already coloured measures the same as its plain form.
+String takeVisible(String text, int count) {
+  if (count <= 0) return '';
+  final out = StringBuffer();
+  var visible = 0;
+  final runes = text.runes.toList();
+  var index = 0;
+  while (index < runes.length && visible < count) {
+    if (runes[index] == 0x1b) {
+      final start = index;
+      while (index < runes.length && runes[index] != 0x6d) {
+        index++;
+      }
+      if (index < runes.length) index++;
+      out.write(String.fromCharCodes(runes.sublist(start, index)));
+      continue;
+    }
+    out.writeCharCode(runes[index]);
+    visible++;
+    index++;
+  }
+  return out.toString();
+}
+
+/// Everything after the first [count] visible characters.
+///
+/// Escape sequences from the skipped part are kept, so the remainder still opens
+/// with whatever colour was active when it was cut.
+String dropVisible(String text, int count) {
+  final carried = StringBuffer();
+  final out = StringBuffer();
+  var visible = 0;
+  final runes = text.runes.toList();
+  var index = 0;
+  while (index < runes.length) {
+    if (runes[index] == 0x1b) {
+      final start = index;
+      while (index < runes.length && runes[index] != 0x6d) {
+        index++;
+      }
+      if (index < runes.length) index++;
+      final sequence = String.fromCharCodes(runes.sublist(start, index));
+      if (visible < count) {
+        carried.write(sequence);
+      } else {
+        out.write(sequence);
+      }
+      continue;
+    }
+    if (visible >= count) out.writeCharCode(runes[index]);
+    visible++;
+    index++;
+  }
+  if (out.isEmpty) return '';
+  return '$carried$out';
 }
 
 /// Plain text width, ignoring escape sequences.

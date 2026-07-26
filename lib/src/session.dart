@@ -204,11 +204,21 @@ class FlutterSession {
     if (record == null) return;
     final message = record.message?.valueAsString ?? '';
     final logger = record.loggerName?.valueAsString ?? '';
-    final prefix = logger.isEmpty ? '' : '[$logger] ';
-    onLog(LogLine(LogSource.developer, '$prefix$message'));
+    final name = logger.isEmpty ? null : logger;
+    onLog(
+      LogLine(LogSource.developer, message, name: name, level: record.level),
+    );
     final errorText = record.error?.valueAsString;
     if (errorText != null && errorText.isNotEmpty && errorText != 'null') {
-      onLog(LogLine(LogSource.developer, '$prefix$errorText'));
+      onLog(
+        LogLine(
+          LogSource.developer,
+          errorText,
+          name: name,
+          // An error attached to a record is severe whatever the record said.
+          level: 1000,
+        ),
+      );
     }
   }
 

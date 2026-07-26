@@ -13,12 +13,23 @@ enum LogSource {
 }
 
 class LogLine {
-  LogLine(this.source, this.text, {DateTime? time})
+  LogLine(this.source, this.text, {DateTime? time, this.name, this.level})
     : time = time ?? DateTime.now();
 
   final DateTime time;
   final LogSource source;
   final String text;
+
+  /// The logger name of a `developer.log` record, when it had one.
+  final String? name;
+
+  /// The record's level, on the package:logging scale: 900 warns, 1000 is
+  /// severe. It is what the app itself said about the line, so it drives the
+  /// colour rather than a guess made from the text.
+  final int? level;
+
+  bool get isSevere => (level ?? 0) >= 1000;
+  bool get isWarning => (level ?? 0) >= 900 && !isSevere;
 
   bool matches(String needle) =>
       needle.isEmpty || text.toLowerCase().contains(needle.toLowerCase());

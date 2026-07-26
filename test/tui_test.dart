@@ -309,6 +309,34 @@ void main() {
       }
     });
 
+    test('a pre-coloured line keeps its colours and its full width', () {
+      const coloured =
+          '\x1b[38;5;12m[api]\x1b[0m \x1b[32mGET /spots 200\x1b[0m in 84ms';
+      final state = connectedState()
+        ..addLog(LogLine(LogSource.developer, coloured));
+      final frame = renderFrame(state, 60, 8);
+      // Escape bytes used to count as width, which wrapped the line early.
+      expect(plain(frame).any((line) => line.contains('in 84ms')), isTrue);
+      expect(frame[1], contains('\x1b[38;5;12m'));
+      expect(frame[1], contains('\x1b[32m'));
+      expect(visibleWidth(frame[1]), lessThanOrEqualTo(60));
+    });
+
+    test('a severe record is red and a warning is yellow', () {
+      final state = connectedState()
+        ..addLog(
+          LogLine(LogSource.developer, 'boom', name: 'Bloc', level: 1000),
+        )
+        ..addLog(LogLine(LogSource.developer, 'careful', level: 900));
+      final frame = renderFrame(state, 60, 8);
+      final severe = frame.firstWhere((line) => line.contains('boom'));
+      final warning = frame.firstWhere((line) => line.contains('careful'));
+      expect(severe, contains('\x1b[31m'));
+      expect(warning, contains('\x1b[33m'));
+      // The logger name is shown apart from the message.
+      expect(plain([severe]).single, contains('Bloc boom'));
+    });
+
     test('a narrow pane still renders without overflowing', () {
       final state = connectedState()
         ..addLog(
