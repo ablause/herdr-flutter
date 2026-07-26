@@ -8,6 +8,7 @@ class AppTarget {
     this.ownerPaneId,
     this.ownerTitle,
     this.runCommand,
+    this.runCwd,
     this.origin = 'pane',
   });
 
@@ -26,6 +27,11 @@ class AppTarget {
 
   /// The command that pane used to start the app, for relaunching it.
   final String? runCommand;
+
+  /// The directory the app was running from, when it differed from the pane's
+  /// own. In a monorepo that is the package, not the checkout root, and it is
+  /// only observable while the process is alive.
+  final String? runCwd;
 
   /// Where the URI came from: a pane's output, or the plugin config.
   final String origin;
@@ -113,6 +119,15 @@ String? extractRunCommand(String output) {
     if (run != null) found = run.group(1)!.trim();
   }
   return found;
+}
+
+/// The directory a pane's foreground process runs in, when it is not the pane's
+/// own. Equal values mean nothing is running below the shell, so there is
+/// nothing to learn.
+String? _runCwd(PaneInfo pane) {
+  if (pane.foregroundCwd.isEmpty) return null;
+  if (pane.foregroundCwd == pane.cwd) return null;
+  return pane.foregroundCwd;
 }
 
 /// Rank panes by how likely they are to host the app this sidebar is about:
@@ -236,6 +251,7 @@ Future<List<AppTarget>> discoverTargets(
           ownerPaneId: pane.paneId,
           ownerTitle: pane.title,
           runCommand: extractRunCommand(output),
+          runCwd: _runCwd(pane),
           origin: targets[existing].origin,
         );
       }
@@ -248,6 +264,7 @@ Future<List<AppTarget>> discoverTargets(
         ownerPaneId: pane.paneId,
         ownerTitle: pane.title,
         runCommand: extractRunCommand(output),
+        runCwd: _runCwd(pane),
       ),
     );
   }

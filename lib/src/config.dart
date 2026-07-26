@@ -24,6 +24,7 @@ class PluginConfig {
     this.paneLines = 3000,
     this.mouse = true,
     this.runCommand = '',
+    this.runCwd = '',
     this.runPlacement = 'split',
     this.runDirection = 'down',
   });
@@ -50,6 +51,9 @@ class PluginConfig {
   /// The command that starts the app, when the scrollback cannot tell.
   final String runCommand;
 
+  /// The directory to start it from, when it cannot be worked out.
+  final String runCwd;
+
   /// Where a launch opens a pane, when there is no previous run pane to reuse.
   final String runPlacement;
   final String runDirection;
@@ -68,6 +72,7 @@ class PluginConfig {
     'pane_lines',
     'mouse',
     'run_command',
+    'run_cwd',
     'run_placement',
     'run_direction',
   };
@@ -152,6 +157,7 @@ class PluginConfig {
       paneLines: paneLines,
       mouse: _bool(values, 'mouse', true, source),
       runCommand: _string(values, 'run_command', '', source),
+      runCwd: _string(values, 'run_cwd', '', source),
       runPlacement: runPlacement,
       runDirection: runDirection,
     );

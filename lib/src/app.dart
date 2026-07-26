@@ -8,6 +8,7 @@ import 'discovery.dart';
 import 'handoff.dart';
 import 'herdr_cli.dart';
 import 'models.dart';
+import 'project.dart';
 import 'report.dart';
 import 'session.dart';
 import 'tui/terminal.dart';
@@ -414,8 +415,22 @@ class App {
               ? null
               : '${target!.ownerPaneId} scrollback');
     state.launchPaneId = target?.ownerPaneId;
-    state.launchCwd = state.repoRoot;
     state.launchPaneFree = false;
+
+    // Where to run it, most reliable first. A monorepo is the reason this is not
+    // simply the checkout root: `--target lib/main.dart` only resolves inside
+    // the package that owns it, and that package is where flutter must start.
+    final root = state.repoRoot;
+    final command = state.launchCommand;
+    state.launchCwd = state.config.runCwd.isNotEmpty
+        ? state.config.runCwd
+        : target?.runCwd ??
+              (root == null
+                  ? null
+                  : flutterProjectDir(
+                      root,
+                      target: command == null ? null : targetOf(command),
+                    ));
 
     final pane = target?.ownerPaneId;
     if (pane != null) {
@@ -423,7 +438,6 @@ class App {
         for (final candidate in await cli.panes()) {
           if (candidate.paneId != pane) continue;
           state.launchPaneFree = looksIdle(candidate);
-          if (candidate.cwd.isNotEmpty) state.launchCwd = candidate.cwd;
         }
       } on HerdrCliException {
         state.launchPaneFree = false;
@@ -442,6 +456,13 @@ class App {
   Future<void> _launch() async {
     final command = state.launchCommand;
     if (command == null || state.launching) return;
+    if (state.launchCwd == null) {
+      _note(
+        'cannot tell which package to run: set run_cwd in the plugin config',
+        isError: true,
+      );
+      return;
+    }
     final parts = command.split(RegExp(r'\s+')).where((p) => p.isNotEmpty);
     state.launching = true;
     _schedule();
@@ -463,7 +484,14 @@ class App {
         _note('no pane to launch in', isError: true);
         return;
       }
-      await cli.runInPane(pane, parts.toList());
+      await cli.runInPane(pane, [
+        // The pane may sit at the checkout root while the app lives in a
+        // package, so the directory is part of what gets run.
+        'cd',
+        state.launchCwd!,
+        '&&',
+        ...parts,
+      ]);
       state.overlay = Overlay.none;
       _note('launched in $pane, waiting for it to announce itself');
       // The app needs a moment to build before it announces anything, and the

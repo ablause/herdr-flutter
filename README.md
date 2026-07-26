@@ -128,6 +128,12 @@ it finds any other. Closing the sidebar still leaves the run alone.
   at a prompt. Nothing is created, the layout does not move, and the previous
   run's output stays above the new one. Otherwise you pick a split or a tab on
   the spot, with `run_placement` as the default.
+- **the directory** is the package the app belongs to, not the checkout root. In
+  a monorepo those differ, and `--target lib/main_dev.dart` only resolves inside
+  the package that owns it, which is how the right one is identified. While the
+  app is running the directory is simply observed from the pane. When neither
+  works the launch says so rather than starting in the wrong place; `run_cwd`
+  settles it.
 
 Launching is refused while an app is attached: two runs on one device means two
 port forwards fighting over the same tunnel.
@@ -162,6 +168,7 @@ follow_logs = true           # stick to the newest line
 pane_lines = 3000            # scrollback read per pane while discovering
 mouse = true                 # clickable tabs and rows, at the cost of selection
 run_command = ""             # how the app starts, when scrollback cannot tell
+run_cwd = ""                 # which package to start it from, if ambiguous
 run_placement = "split"      # split | tab, when no previous run pane is free
 run_direction = "down"       # right | down, split only
 ```
