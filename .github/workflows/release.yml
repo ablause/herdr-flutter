@@ -1,0 +1,90 @@
+name: release
+
+# Build a prebuilt binary per platform and attach it to the GitHub Release for a
+# v* tag. herdr/install.sh downloads the matching asset on plugin install, so a
+# user never needs the Dart SDK.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  # A tag push creates no Release object on its own, and the uploads below target
+  # an existing release, so create it first. The step is idempotent.
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Create the release if it does not exist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+            || gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+                 --title "herdr-flutter $GITHUB_REF_NAME" --verify-tag --generate-notes
+
+  binaries:
+    needs: create-release
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: aarch64-apple-darwin, os: macos-latest }
+          - { target: x86_64-apple-darwin, os: macos-13 }
+          - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest }
+          # Dart has no cross compilation, and an arm64 Linux runner is not on
+          # every plan, so this one builds inside an emulated arm64 container.
+          - { target: aarch64-unknown-linux-gnu, os: ubuntu-latest, platform: linux/arm64 }
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dart-lang/setup-dart@v1
+        if: matrix.platform == ''
+        with:
+          sdk: stable
+
+      - name: Build
+        if: matrix.platform == ''
+        run: |
+          dart pub get
+          mkdir -p build
+          dart compile exe bin/herdr_flutter.dart -o build/herdr-flutter
+
+      - uses: docker/setup-qemu-action@v3
+        if: matrix.platform != ''
+
+      - name: Build in an emulated ${{ matrix.platform }} container
+        if: matrix.platform != ''
+        run: |
+          mkdir -p build
+          docker run --rm --platform "${{ matrix.platform }}" \
+            -v "$PWD":/app -w /app \
+            -e PUB_CACHE=/app/.pub-cache \
+            --user "$(id -u):$(id -g)" \
+            dart:stable \
+            sh -c 'dart pub get && dart compile exe bin/herdr_flutter.dart -o build/herdr-flutter'
+
+      - name: Package
+        run: |
+          cd build
+          archive="herdr-flutter-${{ matrix.target }}.tar.gz"
+          tar -czf "$archive" herdr-flutter
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "$archive" > "herdr-flutter-${{ matrix.target }}.sha256"
+          else
+            shasum -a 256 "$archive" > "herdr-flutter-${{ matrix.target }}.sha256"
+          fi
+          ls -l
+
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "$GITHUB_REF_NAME" \
+            "build/herdr-flutter-${{ matrix.target }}.tar.gz" \
+            "build/herdr-flutter-${{ matrix.target }}.sha256" \
+            --repo "$GITHUB_REPOSITORY" --clobber

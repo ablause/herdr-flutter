@@ -5,9 +5,10 @@ min_herdr_version = "0.7.0"
 platforms = ["macos", "linux"]
 description = "Watch, restart and inspect a running Flutter app in a sidebar beside the agent. Attaches to the Dart VM Service of whatever flutter run is already going in the workspace, shows its logs, its structured errors and its widget tree, hot reloads it, and hands any of that to the agent as a report."
 
-# Compiles the Dart entry point to bin/herdr-flutter with the Dart SDK that
-# ships with Flutter. Skipped by `herdr plugin link`, so for a local checkout run
-# `bash herdr/install.sh` once yourself.
+# On `herdr plugin install`, download the prebuilt herdr-flutter binary for this
+# platform from the matching GitHub Release into bin/, checksum included, so no
+# Dart SDK is needed. Falls back to a source build when no asset fits. Skipped by
+# `herdr plugin link`: for a local checkout run `bash herdr/install.sh --source`.
 [[build]]
 command = ["bash", "herdr/install.sh"]
 

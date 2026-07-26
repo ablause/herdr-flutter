@@ -24,20 +24,27 @@ own output, and closing the sidebar changes nothing about it.
 ## Requirements
 
 - herdr 0.7 or later
-- Flutter with its bundled Dart SDK on `PATH` (used to build the binary)
-- macOS or Linux
+- macOS or Linux, on x86_64 or arm64
+- Flutter, for the app you are debugging. The sidebar itself ships as a prebuilt
+  binary, so no Dart SDK is needed to install it.
 
 ## Install
 
 ```sh
-git clone <this repo> ~/Projects/herdr-flutter
-cd ~/Projects/herdr-flutter
-bash herdr/install.sh          # compiles bin/herdr-flutter
-herdr plugin link .
+herdr plugin install ablause/herdr-flutter
 ```
 
-`herdr plugin install` runs the build step itself; `plugin link` does not, which is
-why the local flow builds first.
+The build step downloads the prebuilt binary for the platform from the release
+matching the manifest version, and verifies its checksum.
+
+For a local checkout, `herdr plugin link` skips build steps, so build it yourself:
+
+```sh
+git clone https://github.com/ablause/herdr-flutter ~/Projects/herdr-flutter
+cd ~/Projects/herdr-flutter
+bash herdr/install.sh --source
+herdr plugin link .
+```
 
 Then bind the toggle in `~/.config/herdr/config.toml`:
 
@@ -147,9 +154,13 @@ instead of changing behaviour quietly.
 ```sh
 dart test        # 51 tests, no app or herdr needed
 dart analyze
+bash herdr/install.sh --source                      # rebuild the binary
 ./bin/herdr-flutter --probe --json                  # attach once, report, exit
 ./bin/herdr-flutter --probe --json --uri=http://…   # against a specific app
 ```
+
+Use `--source`: the plain `install.sh` prefers the release asset and would
+overwrite a locally built binary. Releasing is described in `docs/RELEASING.md`.
 
 `--probe` is the non-interactive check: it does the whole discovery, attach,
 stream and inspector path and prints what it saw, which is how the protocol side

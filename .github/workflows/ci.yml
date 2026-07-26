@@ -1,0 +1,35 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - run: dart pub get
+
+      - name: Analyze
+        run: dart analyze --fatal-infos
+
+      - name: Test
+        run: dart test
+
+      # The version appears in the manifest, the pubspec and the CLI banner, and
+      # the release tag is derived from the manifest. A drift between them would
+      # ship a binary that reports the wrong version, or an install step that
+      # downloads assets for a tag that was never cut.
+      - name: Versions agree
+        run: |
+          manifest=$(grep -m1 '^version' herdr-plugin.toml | sed -E 's/.*"([^"]+)".*/\1/')
+          pubspec=$(grep -m1 '^version:' pubspec.yaml | sed -E 's/version:[[:space:]]*//')
+          banner=$(grep -m1 "^const _version" bin/herdr_flutter.dart | sed -E "s/.*'([^']+)'.*/\1/")
+          echo "manifest=$manifest pubspec=$pubspec banner=$banner"
+          test "$manifest" = "$pubspec" && test "$manifest" = "$banner"
