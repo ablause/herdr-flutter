@@ -3,12 +3,23 @@ name: release
 # Build a prebuilt binary per platform and attach it to the GitHub Release for a
 # v* tag. herdr/install.sh downloads the matching asset on plugin install, so a
 # user never needs the Dart SDK.
+#
+# The manual trigger builds an existing tag, which is how a target that failed on
+# a runner outage gets its asset later without moving the tag.
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build and upload assets for"
+        required: true
 
 permissions:
   contents: write
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
   # A tag push creates no Release object on its own, and the uploads below target
@@ -21,9 +32,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
-            || gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
-                 --title "herdr-flutter $GITHUB_REF_NAME" --verify-tag --generate-notes
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+            || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+                 --title "herdr-flutter $TAG" --verify-tag --generate-notes
 
   binaries:
     needs: create-release
@@ -34,13 +45,17 @@ jobs:
       matrix:
         include:
           - { target: aarch64-apple-darwin, os: macos-latest }
-          - { target: x86_64-apple-darwin, os: macos-13 }
+          - { target: x86_64-apple-darwin, os: macos-15-intel }
           - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest }
           # Dart has no cross compilation, and an arm64 Linux runner is not on
           # every plan, so this one builds inside an emulated arm64 container.
           - { target: aarch64-unknown-linux-gnu, os: ubuntu-latest, platform: linux/arm64 }
     steps:
+      # Build the tag's code, not the branch tip, so a manual re-run of an older
+      # tag produces the binary that tag describes.
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
 
       - uses: dart-lang/setup-dart@v1
         if: matrix.platform == ''
@@ -57,13 +72,18 @@ jobs:
       - uses: docker/setup-qemu-action@v3
         if: matrix.platform != ''
 
+      # Running as the host uid keeps the build output owned by the runner, but
+      # that uid has no passwd entry, so HOME resolves to / and the Dart CLI
+      # cannot create its own config dir. Both HOME and PUB_CACHE have to be
+      # pointed somewhere writable.
       - name: Build in an emulated ${{ matrix.platform }} container
         if: matrix.platform != ''
         run: |
           mkdir -p build
           docker run --rm --platform "${{ matrix.platform }}" \
             -v "$PWD":/app -w /app \
-            -e PUB_CACHE=/app/.pub-cache \
+            -e HOME=/tmp \
+            -e PUB_CACHE=/tmp/.pub-cache \
             --user "$(id -u):$(id -g)" \
             dart:stable \
             sh -c 'dart pub get && dart compile exe bin/herdr_flutter.dart -o build/herdr-flutter'
@@ -84,7 +104,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload "$GITHUB_REF_NAME" \
+          gh release upload "$TAG" \
             "build/herdr-flutter-${{ matrix.target }}.tar.gz" \
             "build/herdr-flutter-${{ matrix.target }}.sha256" \
             --repo "$GITHUB_REPOSITORY" --clobber
