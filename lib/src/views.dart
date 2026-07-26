@@ -10,9 +10,10 @@ import 'tui/style.dart';
 /// test by inspecting the strings it produces.
 List<String> renderFrame(AppState state, int width, int height) {
   if (width < 8 || height < 4) return List.filled(height, '');
-  final rows = <String>[_header(state, width), _tabs(state, width)];
-  final bodyHeight = height - 3;
-  rows.addAll(_body(state, width, bodyHeight));
+  // One row of chrome at the top and one at the bottom. The pane border already
+  // carries the plugin's name, so nothing here repeats it.
+  final rows = <String>[_tabs(state, width)];
+  rows.addAll(_body(state, width, height - 2));
   while (rows.length < height - 1) {
     rows.add('');
   }
@@ -20,42 +21,14 @@ List<String> renderFrame(AppState state, int width, int height) {
   return rows.take(height).toList();
 }
 
-String _header(AppState state, int width) {
-  final line = LineBuilder(width);
-  line.add(' flutter ', Style.boldReverse);
-  line.add(' ');
-  final target = state.target;
-  final session = state.session;
-  if (target == null) {
-    line.addEllipsized(
-      state.scanVisible ? 'scanning panes…' : 'no running app',
-      Style.dim,
-    );
-  } else {
-    line.addEllipsized(target.label, Style.bold);
-  }
-  final indicator = _stateIndicator(state, session);
-  line.addRight('${indicator.$1} ', indicator.$2);
-  return line.build();
-}
-
-(String, Style) _stateIndicator(AppState state, FlutterSession? session) {
-  if (state.scanVisible) return ('scanning', Style.dim);
-  if (session == null) return ('detached', Style.dim);
-  return switch (session.state) {
-    SessionState.connecting => ('connecting', Style.yellow),
-    SessionState.connected => (
-      session.errorCount > 0 ? '${session.errorCount} err' : 'live',
-      session.errorCount > 0 ? Style.boldRed : Style.green,
-    ),
-    SessionState.reloading => ('reloading', Style.boldYellow),
-    SessionState.disconnected => ('disconnected', Style.red),
-    SessionState.failed => ('failed', Style.boldRed),
-  };
-}
-
+/// The numbered views on the left, what the sidebar is attached to on the right.
 String _tabs(AppState state, int width) {
   final line = LineBuilder(width);
+  // The app and its state matter more than full tab names, so the names give way
+  // first, then disappear entirely, leaving the numbers that select them.
+  final detail = width >= 52
+      ? _TabDetail.counts
+      : (width >= 34 ? _TabDetail.short : _TabDetail.numbers);
   for (final view in View.values) {
     final count = switch (view) {
       View.logs => state.visibleLogs.length,
@@ -63,11 +36,45 @@ String _tabs(AppState state, int width) {
       View.inspector => state.flatTree.length,
       View.info => 0,
     };
-    final label = count > 0 ? ' ${view.label} $count ' : ' ${view.label} ';
-    line.add(label, view == state.view ? Style.reverse : Style.dim);
-    line.add(' ');
+    final active = view == state.view;
+    final label = switch (detail) {
+      _TabDetail.counts =>
+        count > 0
+            ? '${view.index + 1} ${view.label}($count)'
+            : '${view.index + 1} ${view.label}',
+      _TabDetail.short => '${view.index + 1} ${view.short}',
+      _TabDetail.numbers => '${view.index + 1}',
+    };
+    line.add(' $label ', active ? Style.reverse : Style.dim);
   }
+
+  final (label, word, style) = _attachment(state);
+  final tail = label == null || line.remaining < label.length + word.length + 4
+      ? word
+      : '$label · $word';
+  line.addRight('$tail ', style);
   return line.build();
+}
+
+enum _TabDetail { counts, short, numbers }
+
+/// What the sidebar is attached to, as one phrase: the app and its state.
+(String?, String, Style) _attachment(AppState state) {
+  if (state.scanVisible) return (null, 'scanning', Style.dim);
+  final target = state.target;
+  final session = state.session;
+  if (target == null || session == null) return (null, 'no app', Style.dim);
+  final label = target.label;
+  return switch (session.state) {
+    SessionState.connecting => (label, 'connecting', Style.yellow),
+    SessionState.connected =>
+      session.errorCount > 0
+          ? (label, '${session.errorCount} err', Style.boldRed)
+          : (label, 'live', Style.green),
+    SessionState.reloading => (label, 'reloading', Style.boldYellow),
+    SessionState.disconnected => (label, 'lost', Style.red),
+    SessionState.failed => (label, 'failed', Style.boldRed),
+  };
 }
 
 List<String> _body(AppState state, int width, int height) {
@@ -132,8 +139,7 @@ List<String> _disconnectedBody(AppState state, int width) {
       lines.add(_text('  $line', width, Style.red));
     }
   }
-  lines.add('');
-  lines.add(_text('  D  rescan    q  quit', width, Style.dim));
+  // The keys live in the status bar, so they are not repeated here.
   return lines;
 }
 
@@ -207,15 +213,15 @@ List<String> _errorsBody(AppState state, int width, int height) {
     final error = state.errors[index];
     final isSelected = index == selected;
     final line = LineBuilder(width);
-    line.add(isSelected ? '›' : ' ', Style.boldRed);
+    line.add(isSelected ? '› ' : '  ', Style.boldRed);
     line.add('${_clock(error.time)} ', Style.brightBlack);
     line.addEllipsized(error.summary, isSelected ? Style.boldRed : Style.red);
-    rows.add(line.build(fill: isSelected ? Style.none : Style.none));
+    rows.add(line.build());
     if (isSelected) {
       final location = error.location;
       if (location != null) {
         final detail = LineBuilder(width);
-        detail.add('   ', Style.none);
+        detail.add('    ', Style.none);
         detail.addEllipsized(
           location.display(root: state.repoRoot),
           Style.brightBlack,
@@ -269,7 +275,7 @@ List<String> _inspectorBody(AppState state, int width, int height) {
     final marker = !node.hasChildren
         ? ' '
         : (id != null && state.collapsed.contains(id) ? '▸' : '▾');
-    line.add(isSelected ? '›' : ' ', Style.boldCyan);
+    line.add(isSelected ? '› ' : '  ', Style.boldCyan);
     line.add('  ' * (node.depth.clamp(0, (width ~/ 4))), Style.none);
     line.add('$marker ', Style.brightBlack);
     line.addEllipsized(
@@ -405,7 +411,7 @@ List<String> _targetsBody(AppState state, int width) {
     final isCursor = index == state.targetCursor;
     final isCurrent = index == state.targetIndex;
     final line = LineBuilder(width);
-    line.add(isCursor ? '›' : ' ', Style.boldCyan);
+    line.add(isCursor ? '› ' : '  ', Style.boldCyan);
     line.add(isCurrent ? '● ' : '  ', Style.green);
     line.addEllipsized(target.label, isCursor ? Style.bold : Style.none);
     rows.add(line.build());
@@ -504,18 +510,44 @@ String _statusBar(AppState state, int width) {
     line.addEllipsized(status, state.statusIsError ? Style.red : Style.none);
     return line.build();
   }
+  final attached = state.session?.isConnected ?? false;
+  // A narrow pane gets a shorter list rather than a sentence cut mid-word.
+  final compact = width < 64;
   final hints = switch (state.overlay) {
+    Overlay.none when !attached => 'D rescan',
     Overlay.none => switch (state.view) {
-      View.logs => 'r reload  R restart  s send  / filter  ? keys',
-      View.errors => 'enter detail  s send  r reload  ? keys',
-      View.inspector => 'enter fold  x select  d details  s send  ? keys',
-      View.info => 'D apps  t toggles  r reload  ? keys',
+      View.logs =>
+        compact
+            ? 'r reload  s send  / filter'
+            : 'r reload  R restart  s send  / filter',
+      View.errors =>
+        compact ? 'enter detail  s send' : 'enter detail  s send  r reload',
+      View.inspector =>
+        compact
+            ? 'enter fold  s send'
+            : 'enter fold  x select  d details  s send',
+      View.info =>
+        compact ? 'D apps  t toggles' : 'D apps  t toggles  r reload',
     },
-    _ => 'esc close  ? keys',
+    _ => 'esc close',
   };
+
+  // Quitting stays pinned to the right whatever the view, the way reviewr keeps
+  // its own trailing group, so the hints are budgeted around it.
+  const quit = 'q quit ';
   line.add(' ');
-  line.addEllipsized(hints, Style.dim);
+  final budget = line.remaining - quit.length - 1;
+  final text = hints.length + 8 <= budget ? '$hints  ? keys' : hints;
+  line.addEllipsized(_clip(text, budget), Style.dim);
+  if (line.remaining >= quit.length) line.addRight(quit, Style.dim);
   return line.build();
+}
+
+String _clip(String text, int max) {
+  if (max <= 1) return '';
+  final runes = text.runes;
+  if (runes.length <= max) return text;
+  return '${String.fromCharCodes(runes.take(max - 1))}…';
 }
 
 List<String> _scroll(List<String> lines, int scroll, int height) {

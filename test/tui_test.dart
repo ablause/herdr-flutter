@@ -97,19 +97,31 @@ void main() {
       expect(frame.length, 20);
     });
 
-    test('shows the device and the live state in the header', () {
+    test('one top row holds the numbered views and the attachment', () {
       final frame = plain(renderFrame(connectedState(), 60, 20));
-      expect(frame.first, contains('flutter'));
-      expect(frame.first, contains('iPhone 17'));
-      expect(frame.first, contains('live'));
+      expect(frame.first, contains('1 logs'));
+      expect(frame.first, contains('2 errors'));
+      expect(frame.first, contains('3 inspect'));
+      expect(frame.first, contains('4 info'));
+      expect(frame.first, contains('iPhone 17 · live'));
     });
 
-    test('names every view in the tab row', () {
+    test('the top row does not repeat the pane name', () {
       final frame = plain(renderFrame(connectedState(), 60, 20));
-      expect(frame[1], contains('logs'));
-      expect(frame[1], contains('errors'));
-      expect(frame[1], contains('inspect'));
-      expect(frame[1], contains('info'));
+      expect(frame.first.contains('flutter'), isFalse);
+    });
+
+    test('a narrow top row keeps the state and drops the app name', () {
+      final frame = plain(renderFrame(connectedState(), 40, 20));
+      expect(frame.first, contains('live'));
+      expect(frame.first.contains('iPhone 17'), isFalse);
+    });
+
+    test('an error count replaces the live marker', () {
+      final state = connectedState();
+      state.session!.errorCount = 3;
+      final frame = plain(renderFrame(state, 60, 20));
+      expect(frame.first, contains('3 err'));
     });
 
     test('shows log lines, newest at the bottom', () {
@@ -120,7 +132,7 @@ void main() {
       final frame = plain(renderFrame(state, 60, 12));
       final first = frame.indexWhere((line) => line.contains('line 0'));
       final last = frame.indexWhere((line) => line.contains('line 4'));
-      expect(first, greaterThan(1));
+      expect(first, greaterThan(0));
       expect(last, greaterThan(first));
     });
 
@@ -178,7 +190,20 @@ void main() {
         frame.any((line) => line.contains('No running Flutter app')),
         isTrue,
       );
-      expect(frame.any((line) => line.contains('rescan')), isTrue);
+      expect(frame.first, contains('no app'));
+    });
+
+    test('the keys live in the status bar, not in the body', () {
+      final state = AppState(config: const PluginConfig())
+        ..firstScanDone = true;
+      final frame = plain(renderFrame(state, 60, 14));
+      expect(frame.last, contains('D rescan'));
+      expect(frame.last, contains('q quit'));
+      // The body used to repeat them as a key list, which wasted two rows. It
+      // still explains what D does in prose, which is not the same thing.
+      final body = frame.sublist(1, frame.length - 1).join('\n');
+      expect(body.contains('D rescan'), isFalse);
+      expect(body.contains('q quit'), isFalse);
     });
 
     test('the help overlay lists the reload keys', () {

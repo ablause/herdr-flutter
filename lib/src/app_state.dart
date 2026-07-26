@@ -4,14 +4,17 @@ import 'models.dart';
 import 'session.dart';
 
 enum View {
-  logs('logs'),
-  errors('errors'),
-  inspector('inspect'),
-  info('info');
+  logs('logs', 'log'),
+  errors('errors', 'err'),
+  inspector('inspect', 'tree'),
+  info('info', 'info');
 
-  const View(this.label);
+  const View(this.label, this.short);
 
   final String label;
+
+  /// Used when the pane is too narrow for the full name and the app state.
+  final String short;
 }
 
 /// Which full-pane overlay is up, if any. A sidebar is too narrow for split
