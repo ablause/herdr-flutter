@@ -87,12 +87,19 @@ trap 'rm -rf "$tmp"' EXIT
 # Release-asset downloads are eventually consistent: the CDN can 404 for a few
 # minutes after a release is published, so retry even on 404. A private repo
 # serves nothing to an anonymous curl, hence the authenticated gh fallback.
+# curl's own errors are held back until the gh fallback has had its turn: on a
+# private repository an anonymous download always 404s, and printing that as an
+# error would make a perfectly good install look broken.
 fetch() {
   local asset="$1"
   curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors --retry-connrefused \
-    "$base/$asset" -o "$tmp/$asset" && return 0
-  command -v gh >/dev/null 2>&1 || return 1
-  gh release download "$TAG" --repo "$REPO" --pattern "$asset" --dir "$tmp" >/dev/null 2>&1
+    "$base/$asset" -o "$tmp/$asset" 2>"$tmp/curl.err" && return 0
+  if command -v gh >/dev/null 2>&1 &&
+    gh release download "$TAG" --repo "$REPO" --pattern "$asset" --dir "$tmp" >/dev/null 2>&1; then
+    return 0
+  fi
+  [ -s "$tmp/curl.err" ] && cat "$tmp/curl.err" >&2
+  return 1
 }
 
 printf '%s: downloading %s (%s)\n' "$NAME" "$archive" "$TAG"
