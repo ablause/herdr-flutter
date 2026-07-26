@@ -9,6 +9,11 @@
 #
 # Then: bash assets/demo-session.sh && vhs assets/demo.tape
 #
+# vhs writes about 2 MB for this recording. Squeeze it before committing, which
+# takes it to a third of that with no visible loss on terminal text:
+#
+#   gifsicle -O3 --lossy=100 --colors 32 assets/demo.gif -o assets/demo.gif
+#
 # The environment is cleared of HERDR_* first, since herdr refuses to nest and
 # the recorder may itself be running inside a herdr pane.
 
