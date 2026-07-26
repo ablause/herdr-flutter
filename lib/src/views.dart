@@ -95,7 +95,13 @@ enum _TabDetail { counts, short, numbers }
   final target = state.target;
   final session = state.session;
   if (target == null || session == null) return (null, 'no app', Style.dim);
-  final label = target.label;
+  // A target found in a pane names its device. One given as a bare URI does not,
+  // and a host and port say nothing, so the VM answers for it.
+  final platform = session.vmInfo['operatingSystem']?.toString();
+  final label =
+      target.deviceName == null && platform != null && platform.isNotEmpty
+      ? platform
+      : target.label;
   return switch (session.state) {
     SessionState.connecting => (label, 'connecting', Style.yellow),
     SessionState.connected =>
@@ -334,6 +340,15 @@ List<String> _inspectorBody(AppState state, int width, int height) {
       line.add(' "', Style.brightBlack);
       line.addEllipsized(preview.replaceAll('\n', ' '), Style.green);
       line.add('"', Style.brightBlack);
+    }
+    // The point of the tree is to get from a widget to its source, so the file
+    // and line ride along whenever the pane is wide enough to hold them.
+    final location = node.location;
+    if (node.createdByLocalProject && location != null) {
+      final where = location.display(root: state.repoRoot).split('/').last;
+      if (line.remaining >= where.length + 2) {
+        line.addRight('$where ', Style.brightBlack);
+      }
     }
     rows.add(line.build());
     state.hitRows.add(index);
