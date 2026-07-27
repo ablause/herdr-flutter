@@ -61,15 +61,55 @@ class LogLine {
   bool get isSevere => (level ?? 0) >= 1000;
   bool get isWarning => (level ?? 0) >= 900 && !isSevere;
 
-  /// Whether `/` keeps this line: one rule, the tag or the text.
+  /// Whether a plain needle keeps this line: its tag, or its text.
   ///
-  /// The tag is on screen, so it is what you type to narrow to a source. Only
-  /// a whole tag counts, since a letter or two would match half the sources by
-  /// accident, and `exc` is nobody's idea of a search term.
+  /// The tag is on screen, so it is what you type to reach a source. Only a
+  /// whole tag counts, since a letter or two would match half the sources by
+  /// accident.
   bool matches(String needle) {
-    if (needle.isEmpty) return true;
     final lower = needle.toLowerCase().trim();
+    if (lower.isEmpty) return true;
     return source.tag == lower || text.toLowerCase().contains(lower);
+  }
+}
+
+/// What `/` narrows the log to: a source, free text, or a source then text.
+///
+/// A whole source tag followed by a space becomes that source, and whatever
+/// follows searches inside it. A space rather than punctuation, because the
+/// tag is already a word on screen and finishing a word is what a space is
+/// for. Until the space arrives the word is still being typed, so it matches
+/// a tag or the text either way and the list narrows as you go.
+///
+/// The cost is that `log in` reads as the developer source plus `in` rather
+/// than as two words. The tag is drawn in its own colour once it takes, which
+/// is what tells you which of the two happened.
+class LogFilter {
+  const LogFilter(this.source, this.text);
+
+  factory LogFilter.parse(String raw) {
+    final space = raw.indexOf(' ');
+    if (space > 0) {
+      final head = raw.substring(0, space).toLowerCase();
+      for (final source in LogSource.values) {
+        if (source.tag == head) {
+          return LogFilter(source, raw.substring(space + 1).trimLeft());
+        }
+      }
+    }
+    return LogFilter(null, raw);
+  }
+
+  final LogSource? source;
+  final String text;
+
+  bool get isEmpty => source == null && text.trim().isEmpty;
+
+  bool matches(LogLine line) {
+    if (source == null) return line.matches(text);
+    if (line.source != source) return false;
+    final needle = text.toLowerCase().trim();
+    return needle.isEmpty || line.text.toLowerCase().contains(needle);
   }
 }
 

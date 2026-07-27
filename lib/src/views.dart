@@ -183,6 +183,21 @@ List<String> _disconnectedBody(AppState state, int width) {
   return lines;
 }
 
+/// The colour a source is drawn in, so a tag that takes in the filter box looks
+/// like the tag it will keep in the log.
+Style _tagStyle(LogSource source) => switch (source) {
+  LogSource.error => Style.boldRed,
+  LogSource.stderr => Style.red,
+  LogSource.developer => Style.cyan,
+  LogSource.session => Style.magenta,
+  LogSource.stdout => Style.none,
+};
+
+/// The same, except that in the filter box a tag has to read as one, and plain
+/// output has no colour of its own to say so.
+Style _filterTagStyle(LogSource source) =>
+    source == LogSource.stdout ? Style.bold : _tagStyle(source);
+
 /// The log as it is drawn, plus the entry each drawn row belongs to.
 ///
 /// A wrapped entry owns several rows, so the two lists are built together:
@@ -199,13 +214,7 @@ List<String> _disconnectedBody(AppState state, int width) {
   for (final (entryIndex, entry) in state.visibleLogs.indexed) {
     final selected = entryIndex == cursor;
     final prefix = showTime ? '${_clock(entry.time)} ' : '';
-    final tagStyle = switch (entry.source) {
-      LogSource.error => Style.boldRed,
-      LogSource.stderr => Style.red,
-      LogSource.developer => Style.cyan,
-      LogSource.session => Style.magenta,
-      LogSource.stdout => Style.none,
-    };
+    final tagStyle = _tagStyle(entry.source);
     // The colour of the text comes from what the app said about the line: the
     // level of a developer.log record, or the stream it came out of.
     final textStyle = entry.isSevere || entry.source == LogSource.stderr
@@ -647,7 +656,7 @@ List<String> _helpBody(int width) {
     ('t', 'debug toggles'),
     ('x', 'select the widget in the app (inspector)'),
     ('f', 'summary tree or full tree (inspector)'),
-    ('/', 'filter the log: text or a source tag, esc clears'),
+    ('/', 'filter: text, or a source tag then space; esc clears'),
     ('D', 'pick an app to attach to'),
     ('ctrl-l', 'redraw'),
     ('? esc', 'this help, close'),
@@ -769,13 +778,22 @@ String _statusBar(AppState state, int width) {
   final status = state.status;
   if (state.editingFilter) {
     line.add(' filter ', Style.boldReverse);
-    line.add(' ${state.filter}', Style.none);
+    final parsed = LogFilter.parse(state.filter);
+    final source = parsed.source;
+    if (source == null) {
+      line.add(' ${state.filter}', Style.none);
+    } else {
+      // Once a whole tag is followed by a space it stops being text: it goes
+      // the colour it has in the log, which is the confirmation that the rest
+      // of what you type now searches inside that source alone.
+      line.add(' ${source.tag} ', _filterTagStyle(source));
+      line.add(parsed.text, Style.none);
+    }
     line.add('▌', Style.boldCyan);
-    // An empty box says what can go in it: the source tags are not guessable,
-    // and the one thing a reader wants is usually the errors alone.
+    // An empty box says what can go in it: the source tags are not guessable.
     if (state.filter.isEmpty) {
       final tags = LogSource.values.map((source) => source.tag).join(' ');
-      line.addRight(' text, or a source: $tags ', Style.dim);
+      line.addRight(' text, or $tags then space ', Style.dim);
     }
     return line.build();
   }

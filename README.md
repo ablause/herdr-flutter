@@ -15,7 +15,8 @@ own output, and closing the sidebar changes nothing about it.
   in one stream in the order they happened. An error shows its summary in red
   with its `file:line` and what the framework was doing under it, and unfolds
   in place on `enter` to the full console rendering, without leaving the run.
-  `/` filters on the text or on a source tag, so `exc` is the errors alone
+  `/` filters: type a source tag then a space to keep that source, and go on
+  typing to search inside it
 - **inspect**: the widget tree, summary or full, with the source location of each
   widget from the project, its text preview, and its properties on demand
 - **net**: the HTTP calls the app makes, with their status, duration and size, and
@@ -104,7 +105,7 @@ pane at all, point the sidebar at it with `service_uri` in the plugin config.
 | `f` | summary tree or full tree |
 | `x` | select the widget in the running app |
 | `d` | properties of the selected widget |
-| `/` | filter the log: text, or a source tag such as `exc` |
+| `/` | filter the log: text, or a source tag then a space |
 | `c` | clear the log or the recorded traffic |
 | `D` | pick an app to attach to |
 | `?` `q` | keys, quit |
@@ -202,8 +203,8 @@ instead of changing behaviour quietly.
 - Errors live in the log and age out of it with everything else, at `log_limit`
   lines. There was once a list of their own that could not be evicted; it went
   because two places to look for one run is worse than losing the oldest error of
-  a five thousand line session. Typing `exc` in the filter brings back the view
-  of them alone.
+  a five thousand line session. Typing `exc` and a space in the filter brings
+  back the view of them alone.
 - Reload and restart need the `flutter run` that owns the app to be alive, since it
   is the one that recompiles. If it never registered its services on the
   connection, the sidebar falls back to sending the `r` or `R` keystroke to the
@@ -212,7 +213,7 @@ instead of changing behaviour quietly.
 ## Development
 
 ```sh
-dart test        # 112 tests, no app or herdr needed
+dart test        # 114 tests, no app or herdr needed
 dart analyze
 bash herdr/install.sh --source                      # rebuild the binary
 ./bin/herdr-flutter --probe --json                  # attach once, report, exit

@@ -616,6 +616,33 @@ void main() {
       expect(state.visibleLogs.single.text, startsWith('login'));
     });
 
+    test('a tag then a space pins the source and searches inside it', () {
+      final state = connectedState()
+        ..addLog(LogLine(LogSource.stdout, 'timeout on /spots'))
+        ..addLog(LogLine(LogSource.stderr, 'timeout on /users'))
+        ..addLog(LogLine(LogSource.stderr, 'socket closed'));
+      state.filter = 'err ';
+      expect(state.visibleLogs, hasLength(2));
+      // What follows the space searches that source and nothing else.
+      state.filter = 'err timeout';
+      expect(state.visibleLogs.single.text, contains('/users'));
+    });
+
+    test('the filter colours a tag once it takes', () {
+      final state = connectedState()..editingFilter = true;
+      // Still being typed: no colour, because it is still text.
+      state.filter = 'exc';
+      expect(renderFrame(state, 72, 10).last, isNot(contains('\x1b[1;31m')));
+      // Followed by a space it is the source, and says so.
+      state.filter = 'exc ';
+      final taken = renderFrame(state, 72, 10).last;
+      expect(taken, contains('\x1b[1;31m'));
+      expect(plain([taken]).single, contains('exc'));
+      // A word that is not a tag stays plain whatever follows it.
+      state.filter = 'spot ';
+      expect(renderFrame(state, 72, 10).last, isNot(contains('\x1b[1;31m')));
+    });
+
     test('the empty filter box names the sources it accepts', () {
       final state = connectedState()..editingFilter = true;
       final bar = plain(renderFrame(state, 72, 10)).last;
