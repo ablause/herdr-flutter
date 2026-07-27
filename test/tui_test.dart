@@ -465,6 +465,88 @@ void main() {
       expect(plain([severe]).single, contains('Bloc boom'));
     });
 
+    test('an error marker sits in the log at the moment it happened', () {
+      final error = errorItem();
+      final state = connectedState()
+        ..addLog(LogLine(LogSource.stdout, 'before the error'))
+        ..addLog(
+          LogLine(
+            LogSource.error,
+            error.summary,
+            time: error.time,
+            level: 1000,
+            error: error,
+          ),
+        )
+        ..addLog(LogLine(LogSource.stdout, 'after the error'));
+      final frame = renderFrame(state, 70, 10);
+      final rows = plain(frame);
+      final marker = rows.indexWhere((line) => line.contains('overflowed'));
+      expect(marker, greaterThan(0));
+      expect(rows[marker], contains('exc'));
+      expect(frame[marker], contains('\x1b[1;31m'));
+      // Chronology is the whole point of the marker: without it the log would
+      // run straight from one line to the other with no sign of the error.
+      expect(
+        rows.indexWhere((line) => line.contains('before the error')),
+        lessThan(marker),
+      );
+      expect(
+        rows.indexWhere((line) => line.contains('after the error')),
+        greaterThan(marker),
+      );
+    });
+
+    test('every row of a wrapped marker points at its own log entry', () {
+      final error = errorItem();
+      final state = connectedState()
+        ..addLog(LogLine(LogSource.stdout, 'first'))
+        ..addLog(
+          LogLine(
+            LogSource.error,
+            error.summary,
+            time: error.time,
+            level: 1000,
+            error: error,
+          ),
+        );
+      // Narrow enough that the summary needs more than one row.
+      final frame = renderFrame(state, 40, 10);
+      final rows = plain(frame);
+      final owned = <int>[];
+      for (var row = 1; row < rows.length - 1; row++) {
+        if (rows[row].trim().isEmpty) continue;
+        final item = state.hitRows[row - 1];
+        if (item != null && state.visibleLogs[item].error != null) {
+          owned.add(row);
+        }
+      }
+      expect(owned.length, greaterThan(1), reason: 'the marker should wrap');
+      for (final row in owned) {
+        expect(state.visibleLogs[state.hitRows[row - 1]!].error, same(error));
+      }
+    });
+
+    test('a marker goes inert once the errors are cleared', () {
+      final error = errorItem();
+      final state = connectedState()
+        ..errors.add(error)
+        ..addLog(
+          LogLine(
+            LogSource.error,
+            error.summary,
+            time: error.time,
+            error: error,
+          ),
+        );
+      expect(state.errors.indexOf(state.visibleLogs.single.error!), 0);
+      // Clearing the errors must not leave the marker pointing at whatever
+      // takes index 0 next.
+      state.errors.clear();
+      state.errors.add(errorItem());
+      expect(state.errors.indexOf(state.visibleLogs.single.error!), -1);
+    });
+
     test('a narrow pane still renders without overflowing', () {
       final state = connectedState()
         ..addLog(

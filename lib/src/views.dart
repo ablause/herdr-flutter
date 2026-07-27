@@ -187,12 +187,22 @@ List<String> _disconnectedBody(AppState state, int width) {
 }
 
 /// A log entry as the display lines it occupies, newest entries last.
-List<String> _logDisplayLines(AppState state, int width) {
+/// The log as it is drawn, plus the entry each drawn row belongs to.
+///
+/// A wrapped entry owns several rows, so the two lists are built together:
+/// deriving one from the other after the fact is what makes a click land on
+/// the wrong line as soon as anything wraps.
+({List<String> lines, List<int?> owners}) _logDisplayLines(
+  AppState state,
+  int width,
+) {
   final showTime = width >= 64;
   final lines = <String>[];
-  for (final entry in state.visibleLogs) {
+  final owners = <int?>[];
+  for (final (entryIndex, entry) in state.visibleLogs.indexed) {
     final prefix = showTime ? '${_clock(entry.time)} ' : '';
     final tagStyle = switch (entry.source) {
+      LogSource.error => Style.boldRed,
       LogSource.stderr => Style.red,
       LogSource.developer => Style.cyan,
       LogSource.session => Style.magenta,
@@ -218,13 +228,14 @@ List<String> _logDisplayLines(AppState state, int width) {
       }
       line.add(part, textStyle);
       lines.add(line.build());
+      owners.add(entryIndex);
     }
   }
-  return lines;
+  return (lines: lines, owners: owners);
 }
 
 List<String> _logsBody(AppState state, int width, int height) {
-  final all = _logDisplayLines(state, width);
+  final (lines: all, owners: owners) = _logDisplayLines(state, width);
   if (all.isEmpty) {
     final message = state.filter.isEmpty
         ? '  Waiting for output from the app…'
@@ -235,6 +246,7 @@ List<String> _logsBody(AppState state, int width, int height) {
   final scroll = state.logScroll.clamp(0, maxScroll);
   final end = all.length - scroll;
   final start = (end - height).clamp(0, all.length);
+  state.hitRows.addAll(owners.sublist(start, end));
   return all.sublist(start, end);
 }
 

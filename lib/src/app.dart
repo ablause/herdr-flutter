@@ -574,6 +574,19 @@ class App {
       case Overlay.none when state.view == View.network:
         _selectCall(item);
         if (again) await _openCallDetail();
+      case Overlay.none when state.view == View.logs:
+        // The log has no cursor, so a single click has nothing to select here.
+        // A double click on an error marker opens the error it stands for.
+        if (!again) return;
+        final logs = state.visibleLogs;
+        final error = item < logs.length ? logs[item].error : null;
+        if (error == null) return;
+        final index = state.errors.indexOf(error);
+        if (index < 0) return;
+        state.errorIndex = index;
+        state.detailScroll = 0;
+        state.overlay = Overlay.errorDetail;
+        _setView(View.errors);
       case Overlay.none:
       case Overlay.help:
       case Overlay.errorDetail:

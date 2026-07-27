@@ -5,7 +5,12 @@ enum LogSource {
   stdout('out'),
   stderr('err'),
   developer('log'),
-  session('app');
+  session('app'),
+
+  /// A framework error, which reaches no other stream: enabling structured
+  /// errors replaces the console dump with the `Flutter.Error` event, so
+  /// without a line here the log would have a hole where the error happened.
+  error('exc');
 
   const LogSource(this.tag);
 
@@ -13,12 +18,24 @@ enum LogSource {
 }
 
 class LogLine {
-  LogLine(this.source, this.text, {DateTime? time, this.name, this.level})
-    : time = time ?? DateTime.now();
+  LogLine(
+    this.source,
+    this.text, {
+    DateTime? time,
+    this.name,
+    this.level,
+    this.error,
+  }) : time = time ?? DateTime.now();
 
   final DateTime time;
   final LogSource source;
   final String text;
+
+  /// The error this line stands for, when it is a marker.
+  ///
+  /// Held by reference rather than by index so that clearing the errors makes
+  /// the older markers inert instead of pointing at whatever took their place.
+  final ErrorItem? error;
 
   /// The logger name of a `developer.log` record, when it had one.
   final String? name;

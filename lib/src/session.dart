@@ -255,7 +255,20 @@ class FlutterSession {
     final data = event.extensionData?.data;
     if (kind == 'Flutter.Error' && data != null) {
       errorCount++;
-      onError(ErrorItem.fromEventData(Map<String, Object?>.from(data)));
+      final item = ErrorItem.fromEventData(Map<String, Object?>.from(data));
+      onError(item);
+      // The log gets a one-line marker at the moment the error happened, so
+      // the run stays readable in order. The whole rendering stays in the
+      // errors view, which is the only place it cannot be evicted by volume.
+      onLog(
+        LogLine(
+          LogSource.error,
+          item.summary,
+          time: item.time,
+          level: 1000,
+          error: item,
+        ),
+      );
       onChange();
       return;
     }

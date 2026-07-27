@@ -93,6 +93,14 @@ Posted on the `Extension` stream with `extensionKind: 'Flutter.Error'`.
 `isStructuredErrorsEnabled()` defaults to true in debug on non-web, so nothing has
 to be enabled: the events arrive as soon as the stream is listened to.
 
+The event is the only channel, not an extra one. `WidgetInspectorService`
+assigns `FlutterError.presentError = _reportStructuredError` when structured
+errors are on, replacing the default handler that dumps to the console, and
+`_reportStructuredError` ends at `postEvent('Flutter.Error', errorJson)` without
+printing anything. A framework error therefore reaches neither `Stdout` nor
+`Stderr`, which is why the log needs a marker of its own to stay in order.
+(`packages/flutter/lib/src/widgets/widget_inspector.dart`, Flutter 3.44.)
+
 Payload shape, from a real `RenderFlex overflowed` capture (see
 `test/fixtures/flutter_error.json`):
 

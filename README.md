@@ -11,7 +11,8 @@ own output, and closing the sidebar changes nothing about it.
 
 ## What it does
 
-- **logs**: stdout, stderr and `dart:developer` log records, filterable
+- **logs**: stdout, stderr and `dart:developer` log records, filterable, with a
+  red marker where each error happened so the run reads in order
 - **errors**: every `Flutter.Error` with its summary, its `file:line` and the full
   console rendering, kept even after they scroll off the run pane
 - **inspect**: the widget tree, summary or full, with the source location of each
@@ -112,9 +113,10 @@ inspector, network or app lists to select it, click a debug toggle to flip it,
 and use the wheel to scroll the log or move a selection.
 
 Clicking a row twice does what `enter` does to it: it opens the error or the
-request, folds a widget, attaches to the app. A terminal reports each button
-press and knows nothing of double clicks, so the pairing is the sidebar's: the
-same row, twice, within 400 ms.
+request, folds a widget, attaches to the app, and opens the error an `exc`
+marker in the log stands for. A terminal reports each button press and knows
+nothing of double clicks, so the pairing is the sidebar's: the same row, twice,
+within 400 ms.
 
 Capturing the mouse is what takes click-drag text selection away from the pane.
 Most terminals still select with shift held down, `y` copies the current capture
@@ -193,7 +195,10 @@ instead of changing behaviour quietly.
 - The widget inspector is a debug-build feature. A profile or release build shows
   logs and errors but no tree.
 - Structured errors are the framework default on non-web debug builds. On the web
-  they are not sent, so the errors view stays empty there.
+  they are not sent, so the errors view stays empty there. Where they are on, they
+  are the *only* channel: enabling them replaces `FlutterError.presentError` with
+  the reporter that posts the event, so a framework error reaches neither stdout
+  nor stderr. That is why the log carries a marker of its own.
 - Reload and restart need the `flutter run` that owns the app to be alive, since it
   is the one that recompiles. If it never registered its services on the
   connection, the sidebar falls back to sending the `r` or `R` keystroke to the
@@ -202,7 +207,7 @@ instead of changing behaviour quietly.
 ## Development
 
 ```sh
-dart test        # 97 tests, no app or herdr needed
+dart test        # 100 tests, no app or herdr needed
 dart analyze
 bash herdr/install.sh --source                      # rebuild the binary
 ./bin/herdr-flutter --probe --json                  # attach once, report, exit

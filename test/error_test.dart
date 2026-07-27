@@ -1,18 +1,12 @@
-import 'dart:convert';
-import 'dart:io';
-
 import 'package:herdr_flutter/src/diagnostics.dart';
 import 'package:herdr_flutter/src/discovery.dart';
 import 'package:herdr_flutter/src/models.dart';
 import 'package:herdr_flutter/src/report.dart';
 import 'package:test/test.dart';
 
-/// A real `Flutter.Error` payload, captured from a Flutter 3.44 debug build
-/// running on macOS. Only the deep render-object subtree was trimmed.
-Map<String, Object?> loadFixture() {
-  final file = File('test/fixtures/flutter_error.json');
-  return jsonDecode(file.readAsStringSync()) as Map<String, Object?>;
-}
+import 'fixtures.dart';
+
+Map<String, Object?> loadFixture() => flutterError();
 
 void main() {
   test('the summary is the ErrorSummary node, not the wrapper description', () {
