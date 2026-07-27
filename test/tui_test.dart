@@ -26,12 +26,8 @@ AppState connectedState({String device = 'iPhone 17'}) {
   );
   final state = AppState(config: const PluginConfig(), repoRoot: '/repo')
     ..targets = [target];
-  final session = FlutterSession(
-    target: target,
-    onLog: (_) {},
-    onError: (_) {},
-    onChange: () {},
-  )..state = SessionState.connected;
+  final session = FlutterSession(target: target, onLog: (_) {}, onChange: () {})
+    ..state = SessionState.connected;
   state.session = session;
   return state;
 }
@@ -203,10 +199,9 @@ void main() {
     test('one top row holds the numbered views and the attachment', () {
       final frame = plain(renderFrame(connectedState(), 72, 20));
       expect(frame.first, contains('1 logs'));
-      expect(frame.first, contains('2 errors'));
-      expect(frame.first, contains('3 inspect'));
-      expect(frame.first, contains('4 net'));
-      expect(frame.first, contains('5 info'));
+      expect(frame.first, contains('2 inspect'));
+      expect(frame.first, contains('3 net'));
+      expect(frame.first, contains('4 info'));
       expect(frame.first, contains('iPhone 17 · live'));
     });
 
@@ -218,7 +213,7 @@ void main() {
     test('a narrow top row keeps the state and drops the app name', () {
       final frame = plain(renderFrame(connectedState(), 41, 20));
       // The names give way to their short form before the state word does.
-      expect(frame.first, contains('4 net'));
+      expect(frame.first, contains('3 net'));
       expect(frame.first, contains('live'));
       expect(frame.first.contains('iPhone 17'), isFalse);
     });
@@ -265,24 +260,24 @@ void main() {
       expect(frame.any((line) => line.contains('err boom')), isTrue);
     });
 
-    test('an error list shows the summary and its location', () {
-      final state = connectedState()
-        ..view = View.errors
-        ..errors.add(
-          ErrorItem.fromEventData({
-            'description': 'Exception caught by widgets library',
-            'renderedErrorText': 'boom at file:///repo/lib/main.dart:12:3',
-            'properties': [
-              {'level': 'summary', 'description': 'Null check operator used'},
-            ],
-          }),
-        );
-      final frame = plain(renderFrame(state, 60, 12));
+    test('an error shows its summary in the log and its location on open', () {
+      final error = ErrorItem.fromEventData({
+        'description': 'Exception caught by widgets library',
+        'renderedErrorText': 'boom at file:///repo/lib/main.dart:12:3',
+        'properties': [
+          {'level': 'summary', 'description': 'Null check operator used'},
+        ],
+      });
+      final state = connectedState()..addLog(LogLine.forError(error));
+      final log = plain(renderFrame(state, 60, 12));
       expect(
-        frame.any((line) => line.contains('Null check operator used')),
+        log.any((line) => line.contains('Null check operator used')),
         isTrue,
       );
-      expect(frame.any((line) => line.contains('lib/main.dart:12')), isTrue);
+      // The location belongs to the detail, which is one keypress away.
+      state.overlay = Overlay.errorDetail;
+      final detail = plain(renderFrame(state, 60, 12));
+      expect(detail.any((line) => line.contains('lib/main.dart:12')), isTrue);
     });
 
     test(
@@ -339,7 +334,7 @@ void main() {
     });
 
     test('the tab spans line up with what was drawn', () {
-      final state = connectedState()..view = View.errors;
+      final state = connectedState()..view = View.inspector;
       final frame = plain(renderFrame(state, 60, 12));
       for (final span in tabSpans(state, 60)) {
         expect(
@@ -351,13 +346,10 @@ void main() {
     });
 
     test('the hit map lines up row for row with a list body', () {
-      final state = connectedState()..view = View.errors;
+      final state = connectedState();
       for (var index = 0; index < 3; index++) {
-        state.errors.add(
-          ErrorItem.fromEventData({'description': 'boom $index'}),
-        );
+        state.addLog(LogLine(LogSource.stdout, 'line $index'));
       }
-      state.errorIndex = 1;
       final frame = renderFrame(state, 60, 12);
       final body = frame.sublist(1, frame.length - 1);
       expect(state.hitRows.length, lessThanOrEqualTo(body.length));
@@ -365,8 +357,8 @@ void main() {
         if (item == null) continue;
         expect(
           plain([body[row]]).single,
-          contains(state.errors[item].summary),
-          reason: 'body row $row must belong to error $item',
+          contains(state.visibleLogs[item].text),
+          reason: 'body row $row must belong to log line $item',
         );
       }
     });
@@ -527,24 +519,50 @@ void main() {
       }
     });
 
-    test('a marker goes inert once the errors are cleared', () {
-      final error = errorItem();
+    test('exc: narrows the log to the errors alone', () {
       final state = connectedState()
-        ..errors.add(error)
-        ..addLog(
-          LogLine(
-            LogSource.error,
-            error.summary,
-            time: error.time,
-            error: error,
-          ),
-        );
-      expect(state.errors.indexOf(state.visibleLogs.single.error!), 0);
-      // Clearing the errors must not leave the marker pointing at whatever
-      // takes index 0 next.
-      state.errors.clear();
-      state.errors.add(errorItem());
-      expect(state.errors.indexOf(state.visibleLogs.single.error!), -1);
+        ..addLog(LogLine(LogSource.stdout, 'plain output'))
+        ..addLog(LogLine.forError(errorItem()))
+        ..addLog(LogLine(LogSource.stderr, 'a warning on stderr'));
+      expect(state.visibleLogs.length, 3);
+      state.filter = 'exc:';
+      expect(state.visibleLogs.single.error, isNotNull);
+      // A source filter still takes text after it.
+      state.filter = 'exc:nothing matches this';
+      expect(state.visibleLogs, isEmpty);
+    });
+
+    test('a colon that is not a source tag stays a plain search', () {
+      final state = connectedState()
+        ..addLog(LogLine(LogSource.stdout, 'GET http://host/spots 200'))
+        ..addLog(LogLine(LogSource.stdout, 'unrelated'));
+      state.filter = 'http://host';
+      expect(state.visibleLogs.single.text, contains('http://host'));
+    });
+
+    test('the cursor rides the tail until it is moved off it', () {
+      final state = connectedState();
+      for (var index = 0; index < 5; index++) {
+        state.addLog(LogLine(LogSource.stdout, 'line $index'));
+      }
+      expect(state.selectedLog!.text, 'line 4');
+      // Off the tail the cursor stays where it was put, even as more arrives.
+      state
+        ..follow = false
+        ..logIndex = 1;
+      state.addLog(LogLine(LogSource.stdout, 'line 5'));
+      expect(state.selectedLog!.text, 'line 1');
+    });
+
+    test('the cursor marks the selected line and only that one', () {
+      final state = connectedState()
+        ..addLog(LogLine(LogSource.stdout, 'first'))
+        ..addLog(LogLine(LogSource.stdout, 'second'));
+      final rows = plain(renderFrame(state, 60, 10));
+      final first = rows.firstWhere((line) => line.contains('first'));
+      final second = rows.firstWhere((line) => line.contains('second'));
+      expect(second, startsWith('›'), reason: 'the tail is selected');
+      expect(first, isNot(startsWith('›')));
     });
 
     test('a narrow pane still renders without overflowing', () {

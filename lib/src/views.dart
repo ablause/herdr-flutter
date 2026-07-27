@@ -46,7 +46,6 @@ List<TabSpan> tabSpans(AppState state, int width) {
   for (final view in View.values) {
     final count = switch (view) {
       View.logs => state.visibleLogs.length,
-      View.errors => state.errors.length,
       View.inspector => state.flatTree.length,
       View.network => state.calls.length,
       View.info => 0,
@@ -141,7 +140,6 @@ List<String> _viewBody(AppState state, int width, int height) {
   }
   return switch (state.view) {
     View.logs => _logsBody(state, width, height),
-    View.errors => _errorsBody(state, width, height),
     View.inspector => _inspectorBody(state, width, height),
     View.network => _networkBody(state, width, height),
     View.info => _infoBody(state, width),
@@ -199,7 +197,9 @@ List<String> _disconnectedBody(AppState state, int width) {
   final showTime = width >= 64;
   final lines = <String>[];
   final owners = <int?>[];
+  final cursor = state.logCursor;
   for (final (entryIndex, entry) in state.visibleLogs.indexed) {
+    final selected = entryIndex == cursor;
     final prefix = showTime ? '${_clock(entry.time)} ' : '';
     final tagStyle = switch (entry.source) {
       LogSource.error => Style.boldRed,
@@ -215,11 +215,13 @@ List<String> _disconnectedBody(AppState state, int width) {
         : (entry.isWarning ? Style.yellow : Style.none);
     final name = entry.name;
     final label = name == null ? '' : '$name ';
-    final indent = prefix.length + 4;
+    // Two columns of gutter for the cursor, so it never sits against the clock.
+    final indent = 2 + prefix.length + 4;
     final body = _wrap(entry.text, width - indent - label.length);
     for (final (index, part) in body.indexed) {
       final line = LineBuilder(width);
       if (index == 0) {
+        line.add(selected ? '› ' : '  ', Style.boldCyan);
         line.add(prefix, Style.brightBlack);
         line.add('${entry.source.tag} ', tagStyle);
         if (label.isNotEmpty) line.add(label, Style.boldCyan);
@@ -242,63 +244,16 @@ List<String> _logsBody(AppState state, int width, int height) {
         : '  No line matches "${state.filter}"';
     return ['', _text(message, width, Style.dim)];
   }
-  final maxScroll = (all.length - height).clamp(0, all.length);
-  final scroll = state.logScroll.clamp(0, maxScroll);
-  final end = all.length - scroll;
-  final start = (end - height).clamp(0, all.length);
+  // Following shows the tail. Off the tail the cursor is kept near the middle,
+  // the way the other lists do it, so moving never walks the selection off the
+  // edge of the pane.
+  final maxStart = (all.length - height).clamp(0, all.length);
+  final start = state.follow
+      ? maxStart
+      : (owners.indexOf(state.logCursor) - height ~/ 2).clamp(0, maxStart);
+  final end = (start + height).clamp(0, all.length);
   state.hitRows.addAll(owners.sublist(start, end));
   return all.sublist(start, end);
-}
-
-List<String> _errorsBody(AppState state, int width, int height) {
-  if (state.errors.isEmpty) {
-    return [
-      '',
-      _text('  No errors since the sidebar attached', width, Style.dim),
-      '',
-      _text(
-        '  Flutter.Error events land here as they happen.',
-        width,
-        Style.dim,
-      ),
-    ];
-  }
-  final rows = <String>[];
-  final selected = state.errorIndex.clamp(0, state.errors.length - 1);
-  final start = (selected - height ~/ 2).clamp(
-    0,
-    (state.errors.length - height).clamp(0, state.errors.length),
-  );
-  for (
-    var index = start;
-    index < state.errors.length && rows.length < height;
-    index++
-  ) {
-    final error = state.errors[index];
-    final isSelected = index == selected;
-    final line = LineBuilder(width);
-    line.add(isSelected ? '› ' : '  ', Style.boldRed);
-    line.add('${_clock(error.time)} ', Style.brightBlack);
-    line.addEllipsized(error.summary, isSelected ? Style.boldRed : Style.red);
-    rows.add(line.build());
-    state.hitRows.add(index);
-    if (isSelected) {
-      final location = error.location;
-      if (location != null) {
-        final detail = LineBuilder(width);
-        detail.add('    ', Style.none);
-        detail.addEllipsized(
-          location.display(root: state.repoRoot),
-          Style.brightBlack,
-        );
-        if (rows.length < height) {
-          rows.add(detail.build());
-          state.hitRows.add(index);
-        }
-      }
-    }
-  }
-  return rows;
 }
 
 List<String> _inspectorBody(AppState state, int width, int height) {
@@ -645,7 +600,7 @@ List<String> _infoBody(AppState state, int width) {
 
 List<String> _helpBody(int width) {
   const entries = <(String, String)>[
-    ('1 … 5 / tab', 'switch view'),
+    ('1 … 4 / tab', 'switch view'),
     ('click', 'switch view, or pick a row'),
     ('double click', 'open it, the way enter would'),
     ('wheel', 'scroll, or move the selection'),
@@ -653,7 +608,7 @@ List<String> _helpBody(int width) {
     ('g G', 'top, bottom (inspector: fetch tree)'),
     ('pgup pgdn', 'page'),
     ('enter', 'open detail, expand or collapse a node'),
-    ('c', 'clear the log, the errors or the traffic'),
+    ('c', 'clear the log or the traffic'),
     ('r', 'hot reload'),
     ('R', 'hot restart'),
     ('s', 'send what is on screen to the agent'),
@@ -661,7 +616,7 @@ List<String> _helpBody(int width) {
     ('t', 'debug toggles'),
     ('x', 'select the widget in the app (inspector)'),
     ('f', 'summary tree or full tree (inspector)'),
-    ('/', 'filter the log, esc clears'),
+    ('/', 'filter the log, exc: for errors, esc clears'),
     ('D', 'pick an app to attach to'),
     ('ctrl-l', 'redraw'),
     ('? esc', 'this help, close'),
@@ -817,12 +772,14 @@ String _statusBar(AppState state, int width) {
   final hints = switch (state.overlay) {
     Overlay.none when !attached => 'D rescan',
     Overlay.none => switch (state.view) {
+      View.logs when state.selectedError != null =>
+        compact
+            ? 'enter error  s send'
+            : 'enter error  s send  / filter  r reload',
       View.logs =>
         compact
             ? 'r reload  s send  / filter'
             : 'r reload  R restart  s send  / filter',
-      View.errors =>
-        compact ? 'enter detail  s send' : 'enter detail  s send  r reload',
       View.inspector =>
         compact
             ? 'enter fold  s send'

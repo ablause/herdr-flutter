@@ -27,6 +27,19 @@ class LogLine {
     this.error,
   }) : time = time ?? DateTime.now();
 
+  /// The line an error takes in the log: its summary, at its own time, severe.
+  ///
+  /// The framework prints nothing itself when structured errors are on, so this
+  /// is the only trace the run leaves, and it carries the whole report with it.
+  LogLine.forError(ErrorItem item)
+    : this(
+        LogSource.error,
+        item.summary,
+        time: item.time,
+        level: 1000,
+        error: item,
+      );
+
   final DateTime time;
   final LogSource source;
   final String text;
@@ -47,9 +60,41 @@ class LogLine {
 
   bool get isSevere => (level ?? 0) >= 1000;
   bool get isWarning => (level ?? 0) >= 900 && !isSevere;
+}
 
-  bool matches(String needle) =>
-      needle.isEmpty || text.toLowerCase().contains(needle.toLowerCase());
+/// What `/` narrows the log to: a source, free text, or both.
+///
+/// A leading `<tag>:` picks the source, so `exc:` shows the framework errors
+/// alone. Anything else before a colon is left as text, so searching for
+/// `http://host` or `12:30` still does what it looks like it does.
+class LogFilter {
+  const LogFilter({this.source, this.text = ''});
+
+  factory LogFilter.parse(String raw) {
+    final colon = raw.indexOf(':');
+    if (colon > 0) {
+      final tag = raw.substring(0, colon).trim().toLowerCase();
+      for (final source in LogSource.values) {
+        if (source.tag == tag) {
+          return LogFilter(
+            source: source,
+            text: raw.substring(colon + 1).trim(),
+          );
+        }
+      }
+    }
+    return LogFilter(text: raw.trim());
+  }
+
+  final LogSource? source;
+  final String text;
+
+  bool get isEmpty => source == null && text.isEmpty;
+
+  bool matches(LogLine line) {
+    if (source != null && line.source != source) return false;
+    return text.isEmpty || line.text.toLowerCase().contains(text.toLowerCase());
+  }
 }
 
 /// One `Flutter.Error` event, kept whole so the report can be rebuilt later.

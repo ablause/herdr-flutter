@@ -60,14 +60,12 @@ class FlutterSession {
   FlutterSession({
     required this.target,
     required this.onLog,
-    required this.onError,
     required this.onChange,
     this.httpProfiling = true,
   });
 
   final AppTarget target;
   final void Function(LogLine) onLog;
-  final void Function(ErrorItem) onError;
   final void Function() onChange;
 
   /// Whether to ask the app to record its HTTP traffic. Recording keeps every
@@ -255,18 +253,9 @@ class FlutterSession {
     final data = event.extensionData?.data;
     if (kind == 'Flutter.Error' && data != null) {
       errorCount++;
-      final item = ErrorItem.fromEventData(Map<String, Object?>.from(data));
-      onError(item);
-      // The log gets a one-line marker at the moment the error happened, so
-      // the run stays readable in order. The whole rendering stays in the
-      // errors view, which is the only place it cannot be evicted by volume.
       onLog(
-        LogLine(
-          LogSource.error,
-          item.summary,
-          time: item.time,
-          level: 1000,
-          error: item,
+        LogLine.forError(
+          ErrorItem.fromEventData(Map<String, Object?>.from(data)),
         ),
       );
       onChange();

@@ -225,8 +225,6 @@ class App {
     state.tree = null;
     state.flatTree = [];
     state.collapsed.clear();
-    state.errors.clear();
-    state.errorIndex = 0;
     state.callIndex = 0;
     state.callDetail = null;
     state.networkError = null;
@@ -238,12 +236,6 @@ class App {
       httpProfiling: state.config.httpProfiling,
       onLog: (line) {
         state.addLog(line);
-        if (state.follow) state.logScroll = 0;
-        _schedule();
-      },
-      onError: (error) {
-        state.errors.add(error);
-        if (state.errors.length == 1) state.errorIndex = 0;
         _schedule();
       },
       onChange: _schedule,
@@ -392,7 +384,10 @@ class App {
         report.widget(node, details: state.nodeDetails),
       );
     }
-    if (state.overlay == Overlay.errorDetail || state.view == View.errors) {
+    // An error is sent when the cursor is on one, whether or not its detail is
+    // open. Otherwise the logs view sends its tail, as it always did.
+    if (state.overlay == Overlay.errorDetail ||
+        (state.view == View.logs && state.selectedError != null)) {
       final error = state.selectedError;
       if (error == null) return null;
       final location = error.location?.display(root: state.repoRoot);
@@ -509,10 +504,7 @@ class App {
         case Overlay.none:
           switch (state.view) {
             case View.logs:
-              state.logScroll = _scrollBy(state.logScroll, up ? 3 : -3);
-              state.follow = state.logScroll == 0;
-            case View.errors:
-              _errorsKey(Key(up ? 'up' : 'down'));
+              _moveLogCursor(up ? -3 : 3, _lastIndex(state.visibleLogs.length));
             case View.inspector:
               await _inspectorKey(Key(up ? 'up' : 'down'));
             case View.network:
@@ -562,12 +554,6 @@ class App {
           final failure = await session.setToggle(toggle, enabled: !enabled);
           if (failure != null) _note(failure, isError: true);
         }
-      case Overlay.none when state.view == View.errors:
-        state.errorIndex = item;
-        if (again) {
-          state.overlay = Overlay.errorDetail;
-          state.detailScroll = 0;
-        }
       case Overlay.none when state.view == View.inspector:
         state.nodeIndex = item;
         if (again) await _inspectorKey(const Key('enter'));
@@ -575,18 +561,13 @@ class App {
         _selectCall(item);
         if (again) await _openCallDetail();
       case Overlay.none when state.view == View.logs:
-        // The log has no cursor, so a single click has nothing to select here.
-        // A double click on an error marker opens the error it stands for.
-        if (!again) return;
-        final logs = state.visibleLogs;
-        final error = item < logs.length ? logs[item].error : null;
-        if (error == null) return;
-        final index = state.errors.indexOf(error);
-        if (index < 0) return;
-        state.errorIndex = index;
-        state.detailScroll = 0;
-        state.overlay = Overlay.errorDetail;
-        _setView(View.errors);
+        state.logIndex = item;
+        state.follow = item >= _lastIndex(state.visibleLogs.length);
+        // A second click opens the error the line stands for, when it is one.
+        if (again && state.selectedError != null) {
+          state.overlay = Overlay.errorDetail;
+          state.detailScroll = 0;
+        }
       case Overlay.none:
       case Overlay.help:
       case Overlay.errorDetail:
@@ -625,12 +606,10 @@ class App {
       case '1':
         _setView(View.logs);
       case '2':
-        _setView(View.errors);
-      case '3':
         _setView(View.inspector);
-      case '4':
+      case '3':
         _setView(View.network);
-      case '5':
+      case '4':
         _setView(View.info);
       case 'tab':
         _setView(View.values[(state.view.index + 1) % View.values.length]);
@@ -678,8 +657,6 @@ class App {
     switch (state.view) {
       case View.logs:
         _logsKey(key);
-      case View.errors:
-        _errorsKey(key);
       case View.inspector:
         await _inspectorKey(key);
       case View.network:
@@ -729,33 +706,49 @@ class App {
 
   void _logsKey(Key key) {
     final page = (terminal.rows - 4).clamp(1, 200);
+    final last = _lastIndex(state.visibleLogs.length);
     switch (key.name) {
       case 'j':
       case 'down':
-        state.logScroll = _scrollBy(state.logScroll, -1);
+        _moveLogCursor(1, last);
       case 'k':
       case 'up':
-        state.logScroll += 1;
+        _moveLogCursor(-1, last);
       case 'pagedown':
-        state.logScroll = _scrollBy(state.logScroll, -page);
+        _moveLogCursor(page, last);
       case 'pageup':
-        state.logScroll += page;
+        _moveLogCursor(-page, last);
       case 'G':
       case 'end':
-        state.logScroll = 0;
+        state.logIndex = last;
+        state.follow = true;
       case 'g':
       case 'home':
-        state.logScroll = 1 << 20;
+        state.logIndex = 0;
+        state.follow = false;
+      case 'enter':
+        if (state.selectedError == null) return;
+        state.overlay = Overlay.errorDetail;
+        state.detailScroll = 0;
       case 'c':
         state.logs.clear();
-        state.logScroll = 0;
+        state.logIndex = 0;
+        state.follow = true;
       case '/':
         state.editingFilter = true;
       default:
         return;
     }
-    state.follow = state.logScroll == 0;
     _schedule();
+  }
+
+  /// Move the log cursor by [delta].
+  ///
+  /// Reaching the newest line puts the cursor back on the tail, so a log that
+  /// has been caught up keeps scrolling on its own; anything else pins it.
+  void _moveLogCursor(int delta, int last) {
+    state.logIndex = (state.logCursor + delta).clamp(0, last);
+    state.follow = state.logIndex >= last;
   }
 
   void _filterKey(Key key) {
@@ -772,41 +765,10 @@ class App {
       default:
         if (key.isChar) state.filter += key.name;
     }
-    state.logScroll = 0;
-    _schedule();
-  }
-
-  void _errorsKey(Key key) {
-    switch (key.name) {
-      case 'j':
-      case 'down':
-        state.errorIndex = (state.errorIndex + 1).clamp(
-          0,
-          _lastIndex(state.errors.length),
-        );
-      case 'k':
-      case 'up':
-        state.errorIndex = (state.errorIndex - 1).clamp(
-          0,
-          _lastIndex(state.errors.length),
-        );
-      case 'g':
-      case 'home':
-        state.errorIndex = 0;
-      case 'G':
-      case 'end':
-        state.errorIndex = _lastIndex(state.errors.length);
-      case 'c':
-        state.errors.clear();
-        state.errorIndex = 0;
-      case 'enter':
-        if (state.errors.isNotEmpty) {
-          state.overlay = Overlay.errorDetail;
-          state.detailScroll = 0;
-        }
-      default:
-        return;
-    }
+    // A filter that changes moves the ground under the cursor, so it goes back
+    // to riding the tail rather than pointing at whatever now sits at its index.
+    state.logIndex = 0;
+    state.follow = true;
     _schedule();
   }
 

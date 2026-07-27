@@ -11,10 +11,10 @@ own output, and closing the sidebar changes nothing about it.
 
 ## What it does
 
-- **logs**: stdout, stderr and `dart:developer` log records, filterable, with a
-  red marker where each error happened so the run reads in order
-- **errors**: every `Flutter.Error` with its summary, its `file:line` and the full
-  console rendering, kept even after they scroll off the run pane
+- **logs**: stdout, stderr, `dart:developer` records and every `Flutter.Error`,
+  in one stream in the order they happened. An error shows its summary in red
+  and opens on `enter` to its `file:line` and its full console rendering.
+  `/` filters, and `exc:` narrows to the errors alone
 - **inspect**: the widget tree, summary or full, with the source location of each
   widget from the project, its text preview, and its properties on demand
 - **net**: the HTTP calls the app makes, with their status, duration and size, and
@@ -92,8 +92,8 @@ pane at all, point the sidebar at it with `service_uri` in the plugin config.
 
 | key | does |
 | --- | --- |
-| `1` … `5`, `tab` | switch view |
-| `j` `k`, arrows, `pgup` `pgdn`, `g` `G` | move |
+| `1` … `4`, `tab` | switch view |
+| `j` `k`, arrows, `pgup` `pgdn`, `g` `G` | move the cursor |
 | `enter`, double click | open a detail, or fold a tree node |
 | `r` / `R` | hot reload / hot restart |
 | `s` | send what is on screen to the agent |
@@ -103,20 +103,19 @@ pane at all, point the sidebar at it with `service_uri` in the plugin config.
 | `f` | summary tree or full tree |
 | `x` | select the widget in the running app |
 | `d` | properties of the selected widget |
-| `/` | filter the log |
-| `c` | clear the log, the errors or the recorded traffic |
+| `/` | filter the log, `exc:` for errors alone |
+| `c` | clear the log or the recorded traffic |
 | `D` | pick an app to attach to |
 | `?` `q` | keys, quit |
 
-The mouse works too: click a tab to switch view, click a row in the errors,
+The mouse works too: click a tab to switch view, click a row in the log,
 inspector, network or app lists to select it, click a debug toggle to flip it,
-and use the wheel to scroll the log or move a selection.
+and use the wheel to move the selection.
 
-Clicking a row twice does what `enter` does to it: it opens the error or the
-request, folds a widget, attaches to the app, and opens the error an `exc`
-marker in the log stands for. A terminal reports each button press and knows
-nothing of double clicks, so the pairing is the sidebar's: the same row, twice,
-within 400 ms.
+Clicking a row twice does what `enter` does to it: it opens the error a line
+stands for or the request, folds a widget, attaches to the app. A terminal
+reports each button press and knows nothing of double clicks, so the pairing is
+the sidebar's: the same row, twice, within 400 ms.
 
 Capturing the mouse is what takes click-drag text selection away from the pane.
 Most terminals still select with shift held down, `y` copies the current capture
@@ -195,10 +194,14 @@ instead of changing behaviour quietly.
 - The widget inspector is a debug-build feature. A profile or release build shows
   logs and errors but no tree.
 - Structured errors are the framework default on non-web debug builds. On the web
-  they are not sent, so the errors view stays empty there. Where they are on, they
-  are the *only* channel: enabling them replaces `FlutterError.presentError` with
+  they are not sent, so no error line appears there. Where they are on, the event
+  is the *only* channel: enabling them replaces `FlutterError.presentError` with
   the reporter that posts the event, so a framework error reaches neither stdout
-  nor stderr. That is why the log carries a marker of its own.
+  nor stderr. That is why errors are a line in the log rather than an echo of one.
+- Errors live in the log and age out of it with everything else, at `log_limit`
+  lines. There was once a list of their own that could not be evicted; it went
+  because two places to look for one run is worse than losing the oldest error of
+  a five thousand line session. `exc:` brings back the view of them alone.
 - Reload and restart need the `flutter run` that owns the app to be alive, since it
   is the one that recompiles. If it never registered its services on the
   connection, the sidebar falls back to sending the `r` or `R` keystroke to the
