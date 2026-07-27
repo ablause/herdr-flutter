@@ -235,20 +235,30 @@ List<String> _disconnectedBody(AppState state, int width) {
       lines.add(line.build());
       owners.add(entryIndex);
     }
-    if (!unfolded) continue;
-    // The whole rendering sits under its own line, still part of the run rather
-    // than a page of its own, and every row of it belongs to the same entry so
+    if (error == null) continue;
+    // Folded, an error still shows where it happened and what the framework was
+    // doing: a summary alone rarely says which of three call sites blew up.
+    // Unfolded, the whole rendering follows, still inside the run rather than
+    // on a page of its own. Either way every row belongs to the same entry, so
     // a click anywhere in it lands on the error.
     final location = error.location?.display(root: state.repoRoot);
-    for (final raw in [
-      if (location != null) location,
-      ...const LineSplitterLite().split(error.detail),
-    ]) {
+    // Two rows folded, whatever they hold: past that the previews of a handful
+    // of errors crowd out the run they are supposed to sit inside, and the
+    // third line of a rendering is usually a header whose content is cut off.
+    final detail = unfolded
+        ? const LineSplitterLite().split(error.detail).toList()
+        : error.preview(limit: location == null ? 2 : 1);
+    for (final raw in [if (location != null) location, ...detail]) {
       for (final part in _wrap(raw, width - indent - 2)) {
         final line = LineBuilder(width)
           ..add(' ' * indent, Style.none)
           ..add('│ ', Style.brightBlack)
-          ..add(part, raw == location ? Style.boldCyan : _detailStyle(raw));
+          ..add(
+            part,
+            raw == location
+                ? Style.boldCyan
+                : (unfolded ? _detailStyle(raw) : Style.brightBlack),
+          );
         lines.add(line.build());
         owners.add(entryIndex);
       }

@@ -13,8 +13,9 @@ own output, and closing the sidebar changes nothing about it.
 
 - **logs**: stdout, stderr, `dart:developer` records and every `Flutter.Error`,
   in one stream in the order they happened. An error shows its summary in red
-  and unfolds in place on `enter` to its `file:line` and its full console
-  rendering, without leaving the run. `/` filters, `exc:` narrows to the errors
+  with its `file:line` and what the framework was doing under it, and unfolds
+  in place on `enter` to the full console rendering, without leaving the run.
+  `/` filters, `exc:` narrows to the errors
 - **inspect**: the widget tree, summary or full, with the source location of each
   widget from the project, its text preview, and its properties on demand
 - **net**: the HTTP calls the app makes, with their status, duration and size, and
@@ -113,9 +114,9 @@ inspector, network or app lists to select it, click a debug toggle to flip it,
 and use the wheel to move the selection.
 
 Clicking a row twice does what `enter` does to it: it unfolds an error, opens a
-request, folds a widget, attaches to the app. A terminal
-reports each button press and knows nothing of double clicks, so the pairing is
-the sidebar's: the same row, twice, within 400 ms.
+request, folds a widget, attaches to the app. A terminal reports each button
+press and knows nothing of double clicks, so the pairing is the sidebar's: the
+same row, twice, within 400 ms.
 
 Capturing the mouse is what takes click-drag text selection away from the pane.
 Most terminals still select with shift held down, `y` copies the current capture
@@ -139,7 +140,7 @@ still written, and its path is in the message.
 
 ## The network view
 
-`4` lists the HTTP calls the app makes, newest last, and follows the newest one
+`3` lists the HTTP calls the app makes, newest last, and follows the newest one
 until you move off it. `enter` opens one: its timings, its headers, and its
 request and response bodies, with JSON pretty-printed whatever content type the
 server claimed. `c` clears the recording, in the app as well as in the sidebar.
@@ -210,7 +211,7 @@ instead of changing behaviour quietly.
 ## Development
 
 ```sh
-dart test        # 106 tests, no app or herdr needed
+dart test        # 110 tests, no app or herdr needed
 dart analyze
 bash herdr/install.sh --source                      # rebuild the binary
 ./bin/herdr-flutter --probe --json                  # attach once, report, exit

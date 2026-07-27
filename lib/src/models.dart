@@ -146,6 +146,36 @@ class ErrorItem {
     return '$renderedText\n\n${renderNode(node)}';
   }
 
+  /// The lines worth reading without unfolding: what the framework was doing
+  /// and which widget it blamed, but never the stack.
+  ///
+  /// The rendering opens with a banner rule and repeats the summary a line or
+  /// two in, so both are dropped: what is left is the sentence that places the
+  /// error. Nothing here is guaranteed, and an unusual payload yields none.
+  List<String> preview({int limit = 2}) {
+    final wanted = <String>[];
+    for (final raw in const LineSplitterLite().split(detail)) {
+      final line = raw.trim();
+      if (line.isEmpty || _isRule(line)) continue;
+      if (line == summary.trim()) continue;
+      // A repeat error renders as this one sentence, which says nothing the
+      // summary beside it does not.
+      if (line.startsWith('Another exception was thrown:')) continue;
+      wanted.add(line);
+      if (wanted.length == limit) break;
+    }
+    return wanted;
+  }
+
+  /// Decoration rather than content: the titled banner the rendering opens
+  /// with, the rule it closes on, and the striped bar an overflow draws.
+  static bool _isRule(String line) {
+    if (line.startsWith('═') || line.startsWith('╞') || line.startsWith('╡')) {
+      return true;
+    }
+    return line.split('').every((rune) => '═╡╞◢◤▲ '.contains(rune));
+  }
+
   static CreationLocation? _firstLocation(
     Map<String, Object?> node,
     int depth,

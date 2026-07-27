@@ -275,17 +275,39 @@ void main() {
         isTrue,
       );
       expect(folded.any((line) => line.contains('▸')), isTrue);
-      // Folded, the rendering stays out of the way.
-      expect(folded.any((line) => line.contains('lib/main.dart:12')), isFalse);
+      // Folded still places the error: the location is worth more than the
+      // summary alone when three call sites share a message.
+      expect(folded.any((line) => line.contains('lib/main.dart:12')), isTrue);
+
       state.unfolded.add(state.visibleLogs.single);
       final open = plain(renderFrame(state, 60, 12));
-      expect(open.any((line) => line.contains('lib/main.dart:12')), isTrue);
       expect(open.any((line) => line.contains('▾')), isTrue);
       // It stays part of the log rather than taking the pane over.
       expect(
         open.any((line) => line.contains('Null check operator used')),
         isTrue,
       );
+    });
+
+    test('a folded error shows where it happened, not its stack', () {
+      final state = connectedState()..addLog(LogLine.forError(errorItem()));
+      final folded = plain(renderFrame(state, 72, 16));
+      expect(folded.any((line) => line.contains('lib/main.dart:29')), isTrue);
+      expect(
+        folded.any(
+          (line) => line.contains('The following assertion was thrown'),
+        ),
+        isTrue,
+      );
+      // Two rows folded, whatever they hold.
+      expect(folded.where((line) => line.contains('│')).length, 2);
+      // Nothing from deep in the rendering reaches a folded line.
+      expect(folded.any((line) => line.contains('RenderFlex#')), isFalse);
+      expect(folded.any((line) => line.contains('creator:')), isFalse);
+
+      state.unfolded.add(state.visibleLogs.single);
+      final open = plain(renderFrame(state, 72, 60));
+      expect(open.any((line) => line.contains('creator:')), isTrue);
     });
 
     test(
