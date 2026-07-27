@@ -1,6 +1,6 @@
 id = "ablause.herdr-flutter"
 name = "Herdr Flutter"
-version = "0.2.0" # x-release-please-version
+version = "0.3.0" # x-release-please-version
 min_herdr_version = "0.7.0"
 platforms = ["macos", "linux"]
 description = "Watch, restart and inspect a running Flutter app in a sidebar beside the agent. Attaches to the Dart VM Service of whatever flutter run is already going in the workspace, shows its logs, its structured errors and its widget tree, hot reloads it, and hands any of that to the agent as a report."

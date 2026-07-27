@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.3.0](https://github.com/ablause/herdr-flutter/compare/v0.2.0...v0.3.0) (2026-07-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* the errors view is gone and the views renumber to 1 logs, 2 inspect, 3 net, 4 info. Errors now age out of the ring buffer with everything else at log_limit lines, where the list could not be evicted. Two places to look at one run costs more than losing the oldest error of a five thousand line session; typing exc and a space brings back the view of them alone.
+
+### Features
+
+* fold the errors view into the log ([#5](https://github.com/ablause/herdr-flutter/issues/5)) ([2399033](https://github.com/ablause/herdr-flutter/commit/239903376d426d43a6367798d26a725275efe4aa))
+
+
+### Refactoring
+
+* name the two clamp idioms in the controller ([2266787](https://github.com/ablause/herdr-flutter/commit/2266787ebe78acf0ece7226d6b1f5c1c5b03fbe3))
+
 ## [0.2.0](https://github.com/ablause/herdr-flutter/compare/v0.1.1...v0.2.0) (2026-07-27)
 
 
