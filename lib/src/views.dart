@@ -647,7 +647,7 @@ List<String> _helpBody(int width) {
     ('t', 'debug toggles'),
     ('x', 'select the widget in the app (inspector)'),
     ('f', 'summary tree or full tree (inspector)'),
-    ('/', 'filter the log, exc: for errors, esc clears'),
+    ('/', 'filter the log: text or a source tag, esc clears'),
     ('D', 'pick an app to attach to'),
     ('ctrl-l', 'redraw'),
     ('? esc', 'this help, close'),
@@ -771,6 +771,12 @@ String _statusBar(AppState state, int width) {
     line.add(' filter ', Style.boldReverse);
     line.add(' ${state.filter}', Style.none);
     line.add('▌', Style.boldCyan);
+    // An empty box says what can go in it: the source tags are not guessable,
+    // and the one thing a reader wants is usually the errors alone.
+    if (state.filter.isEmpty) {
+      final tags = LogSource.values.map((source) => source.tag).join(' ');
+      line.addRight(' text, or a source: $tags ', Style.dim);
+    }
     return line.build();
   }
   if (status != null) {

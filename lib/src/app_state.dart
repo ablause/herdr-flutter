@@ -120,10 +120,9 @@ class AppState {
       ? null
       : flatTree[nodeIndex.clamp(0, flatTree.length - 1)];
 
-  List<LogLine> get visibleLogs {
-    final parsed = LogFilter.parse(filter);
-    return parsed.isEmpty ? logs : logs.where(parsed.matches).toList();
-  }
+  List<LogLine> get visibleLogs => filter.isEmpty
+      ? logs
+      : logs.where((line) => line.matches(filter)).toList();
 
   /// The error lines showing their full rendering under themselves.
   ///

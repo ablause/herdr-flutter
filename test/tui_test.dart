@@ -592,17 +592,38 @@ void main() {
       expect(state.unfolded, isEmpty);
     });
 
-    test('exc: narrows the log to the errors alone', () {
+    test('typing a source tag narrows the log to that source', () {
       final state = connectedState()
         ..addLog(LogLine(LogSource.stdout, 'plain output'))
         ..addLog(LogLine.forError(errorItem()))
         ..addLog(LogLine(LogSource.stderr, 'a warning on stderr'));
       expect(state.visibleLogs.length, 3);
-      state.filter = 'exc:';
+      state.filter = 'exc';
       expect(state.visibleLogs.single.error, isNotNull);
-      // A source filter still takes text after it.
-      state.filter = 'exc:nothing matches this';
-      expect(state.visibleLogs, isEmpty);
+      state.filter = 'err';
+      expect(state.visibleLogs.single.source, LogSource.stderr);
+    });
+
+    test('a tag that is also a word keeps finding the word', () {
+      final state = connectedState()
+        ..addLog(LogLine(LogSource.stdout, 'login failed for user 12'))
+        ..addLog(LogLine(LogSource.developer, 'cache warm', name: 'Boot'));
+      // The developer line by its tag, the other by its text. One rule, so
+      // nothing a reader can see is ever unreachable.
+      state.filter = 'log';
+      expect(state.visibleLogs, hasLength(2));
+      state.filter = 'login';
+      expect(state.visibleLogs.single.text, startsWith('login'));
+    });
+
+    test('the empty filter box names the sources it accepts', () {
+      final state = connectedState()..editingFilter = true;
+      final bar = plain(renderFrame(state, 72, 10)).last;
+      expect(bar, contains('exc'));
+      expect(bar, contains('out'));
+      // Once something is typed the hint gets out of the way.
+      state.filter = 'e';
+      expect(plain(renderFrame(state, 72, 10)).last, isNot(contains('out')));
     });
 
     test('a colon that is not a source tag stays a plain search', () {

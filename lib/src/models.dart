@@ -60,40 +60,16 @@ class LogLine {
 
   bool get isSevere => (level ?? 0) >= 1000;
   bool get isWarning => (level ?? 0) >= 900 && !isSevere;
-}
 
-/// What `/` narrows the log to: a source, free text, or both.
-///
-/// A leading `<tag>:` picks the source, so `exc:` shows the framework errors
-/// alone. Anything else before a colon is left as text, so searching for
-/// `http://host` or `12:30` still does what it looks like it does.
-class LogFilter {
-  const LogFilter({this.source, this.text = ''});
-
-  factory LogFilter.parse(String raw) {
-    final colon = raw.indexOf(':');
-    if (colon > 0) {
-      final tag = raw.substring(0, colon).trim().toLowerCase();
-      for (final source in LogSource.values) {
-        if (source.tag == tag) {
-          return LogFilter(
-            source: source,
-            text: raw.substring(colon + 1).trim(),
-          );
-        }
-      }
-    }
-    return LogFilter(text: raw.trim());
-  }
-
-  final LogSource? source;
-  final String text;
-
-  bool get isEmpty => source == null && text.isEmpty;
-
-  bool matches(LogLine line) {
-    if (source != null && line.source != source) return false;
-    return text.isEmpty || line.text.toLowerCase().contains(text.toLowerCase());
+  /// Whether `/` keeps this line: one rule, the tag or the text.
+  ///
+  /// The tag is on screen, so it is what you type to narrow to a source. Only
+  /// a whole tag counts, since a letter or two would match half the sources by
+  /// accident, and `exc` is nobody's idea of a search term.
+  bool matches(String needle) {
+    if (needle.isEmpty) return true;
+    final lower = needle.toLowerCase().trim();
+    return source.tag == lower || text.toLowerCase().contains(lower);
   }
 }
 
