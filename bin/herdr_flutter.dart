@@ -117,8 +117,11 @@ Future<int> _probe(
     stderr.writeln('attach failed: ${session.failure}');
     return 1;
   }
-  // Give the app a moment to announce its extensions and post a frame.
+  // Give the app a moment to announce its extensions and post a frame. The
+  // profiler reports nothing about requests issued before it was switched on,
+  // so what it sees here is only the traffic of those two seconds.
   await Future<void>.delayed(const Duration(seconds: 2));
+  await session.pollHttpCalls();
   final tree = await session.fetchWidgetTree();
   final report = {
     'targets': [
@@ -142,6 +145,12 @@ Future<int> _probe(
     'frames_seen': session.frames,
     'toggles': session.toggleStates,
     'log_lines': logs.length,
+    'http_profiler': session.networkReady,
+    'http_recording': session.httpProfilingEnabled,
+    'http_calls': [
+      for (final call in session.calls)
+        '${call.method} ${call.uri} ${call.statusCode ?? call.error ?? 'pending'}',
+    ],
     'errors': [for (final error in errors) error.summary],
     'widget_tree': tree == null
         ? null

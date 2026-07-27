@@ -7,6 +7,7 @@ import 'package:vm_service/vm_service_io.dart';
 
 import 'discovery.dart';
 import 'models.dart';
+import 'network.dart';
 
 /// Service extension names this sidebar uses. Verified against the Flutter
 /// framework sources shipped with the SDK in use (see docs/api-notes.md).
@@ -17,6 +18,12 @@ class Ext {
   static const disposeGroup = 'ext.flutter.inspector.disposeGroup';
   static const isWidgetTreeReady = 'ext.flutter.inspector.isWidgetTreeReady';
   static const selectMode = 'ext.flutter.inspector.show';
+
+  /// dart:io's own extensions, registered by the VM rather than by Flutter.
+  static const httpTimelineLogging = 'ext.dart.io.httpEnableTimelineLogging';
+  static const httpProfile = 'ext.dart.io.getHttpProfile';
+  static const httpProfileRequest = 'ext.dart.io.getHttpProfileRequest';
+  static const clearHttpProfile = 'ext.dart.io.clearHttpProfile';
 }
 
 /// A debug toggle exposed by the framework as a boolean service extension.
@@ -55,12 +62,17 @@ class FlutterSession {
     required this.onLog,
     required this.onError,
     required this.onChange,
+    this.httpProfiling = true,
   });
 
   final AppTarget target;
   final void Function(LogLine) onLog;
   final void Function(ErrorItem) onError;
   final void Function() onChange;
+
+  /// Whether to ask the app to record its HTTP traffic. Recording keeps every
+  /// body in the app's memory until it is cleared, so it can be turned off.
+  final bool httpProfiling;
 
   static const _objectGroup = 'herdr-flutter';
 
@@ -86,9 +98,24 @@ class FlutterSession {
   double? lastRasterMs;
   int errorCount = 0;
 
+  /// The HTTP calls seen since profiling was enabled, oldest first.
+  List<HttpCall> calls = const [];
+  final Map<String, HttpCall> _callsById = {};
+
+  /// The device clock as of the last poll, which dates the calls and measures
+  /// the ones still running without involving this process's own clock.
+  int? profileMicros;
+
+  bool httpProfilingEnabled = false;
+
+  /// Beyond this the oldest calls are dropped, the way the log is trimmed. The
+  /// app keeps its own copy either way; this is only what the sidebar holds.
+  static const _callLimit = 500;
+
   bool get canReload => _toolMethods.containsKey('reloadSources');
   bool get canRestart => _toolMethods.containsKey('hotRestart');
   bool get inspectorReady => extensionRpcs.contains(Ext.rootWidgetTree);
+  bool get networkReady => extensionRpcs.contains(Ext.httpProfile);
   bool get isConnected =>
       state == SessionState.connected || state == SessionState.reloading;
 
@@ -116,6 +143,7 @@ class FlutterSession {
       _setState(SessionState.connected);
       unawaited(_loadFlutterVersion());
       unawaited(refreshToggles());
+      unawaited(enableHttpProfiling());
     } on TimeoutException {
       failure =
           'the service did not answer within eight seconds, '
@@ -250,7 +278,11 @@ class FlutterSession {
     switch (event.kind) {
       case EventKind.kServiceExtensionAdded:
         final rpc = event.extensionRPC;
-        if (rpc != null && extensionRpcs.add(rpc)) onChange();
+        if (rpc == null || !extensionRpcs.add(rpc)) return;
+        // dart:io registers its extensions on its own schedule, so profiling is
+        // turned on whenever they show up rather than only at attach.
+        if (rpc == Ext.httpProfile) unawaited(enableHttpProfiling());
+        onChange();
       case EventKind.kIsolateStart:
       case EventKind.kIsolateRunnable:
         unawaited(_onIsolateRestarted());
@@ -265,10 +297,12 @@ class FlutterSession {
 
   Future<void> _onIsolateRestarted() async {
     // A hot restart replaces the isolate: everything keyed to the old one, the
-    // inspector object group included, is gone.
+    // inspector object group and the recorded traffic included, is gone.
     errorCount = 0;
+    _resetCalls();
     await _refreshIsolate();
     await refreshToggles();
+    await enableHttpProfiling();
     onChange();
   }
 
@@ -441,6 +475,93 @@ class FlutterSession {
       Ext.setSelectionById,
       args: {'arg': valueId, 'objectGroup': _objectGroup},
     );
+  }
+
+  /// Ask dart:io to record HTTP traffic, which is what fills the network view.
+  ///
+  /// Nothing is recorded before this: the profiler is off by default, and a
+  /// request issued while it was off is never reported, not even in hindsight.
+  Future<String?> enableHttpProfiling() async {
+    if (!httpProfiling) return 'recording is off in the plugin config';
+    if (!networkReady) return 'this app does not expose the dart:io profiler';
+    try {
+      final response = await _callExtension(
+        Ext.httpTimelineLogging,
+        args: {'enabled': 'true'},
+      );
+      httpProfilingEnabled = response?['enabled'] == true;
+      onChange();
+      return httpProfilingEnabled ? null : 'the app refused to record traffic';
+    } on Exception catch (error) {
+      return _short(error);
+    }
+  }
+
+  /// Fetch what changed since the last poll and merge it into [calls].
+  ///
+  /// The profiler answers with its own clock, and that timestamp is what the
+  /// next poll asks from: a device whose clock differs from this machine's would
+  /// otherwise be asked for a window that never matches.
+  Future<String?> pollHttpCalls() async {
+    if (!networkReady) return 'this app does not expose the dart:io profiler';
+    try {
+      final since = profileMicros;
+      final response = await _callExtension(
+        Ext.httpProfile,
+        args: {if (since != null) 'updatedSince': '$since'},
+      );
+      if (response == null) return 'not connected';
+      profileMicros = response['timestamp'] as int? ?? profileMicros;
+      final requests = response['requests'];
+      if (requests is! List) return null;
+      var changed = false;
+      for (final entry in requests) {
+        if (entry is! Map) continue;
+        final call = HttpCall.fromJson(Map<String, Object?>.from(entry));
+        if (call.id.isEmpty) continue;
+        _callsById[call.id] = call;
+        changed = true;
+      }
+      if (!changed) return null;
+      while (_callsById.length > _callLimit) {
+        _callsById.remove(_callsById.keys.first);
+      }
+      calls = List.unmodifiable(_callsById.values);
+      onChange();
+      return null;
+    } on Exception catch (error) {
+      return _short(error);
+    }
+  }
+
+  /// One call with its bodies, which the list form does not carry.
+  Future<HttpCallDetail?> fetchHttpCall(String id) async {
+    final response = await _callExtension(
+      Ext.httpProfileRequest,
+      args: {'id': id},
+    );
+    if (response == null) return null;
+    return HttpCallDetail.fromJson(response);
+  }
+
+  /// Drop the recorded traffic, in the app as well as here.
+  Future<String?> clearHttpCalls() async {
+    _resetCalls();
+    onChange();
+    if (!networkReady) return null;
+    try {
+      await _callExtension(Ext.clearHttpProfile);
+      return null;
+    } on Exception catch (error) {
+      return _short(error);
+    }
+  }
+
+  void _resetCalls() {
+    _callsById.clear();
+    calls = const [];
+    profileMicros = null;
+    httpProfilingEnabled = false;
   }
 
   Future<void> refreshToggles() async {

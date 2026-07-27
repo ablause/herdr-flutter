@@ -31,10 +31,13 @@ class App {
   final AppState state;
 
   final _done = Completer<void>();
+  final _clicks = ClickTracker();
   Timer? _renderTimer;
   Timer? _statusTimer;
   Timer? _retryTimer;
+  Timer? _networkTimer;
   bool _rendering = false;
+  bool _polling = false;
 
   /// Set on the way out. Closing the session makes it report a disconnection,
   /// which would otherwise schedule one last frame and paint it over the shell
@@ -68,6 +71,7 @@ class App {
     _retryTimer?.cancel();
     _renderTimer?.cancel();
     _statusTimer?.cancel();
+    _networkTimer?.cancel();
     await state.session?.dispose();
     terminal.leave();
   }
@@ -211,10 +215,15 @@ class App {
     state.collapsed.clear();
     state.errors.clear();
     state.errorIndex = 0;
+    state.callIndex = 0;
+    state.callDetail = null;
+    state.networkError = null;
+    state.followCalls = true;
 
     final target = state.targets[index];
     final session = FlutterSession(
       target: target,
+      httpProfiling: state.config.httpProfiling,
       onLog: (line) {
         state.addLog(line);
         if (state.follow) state.logScroll = 0;
@@ -233,11 +242,69 @@ class App {
       state.addLog(LogLine(LogSource.session, 'Attached to ${target.label}'));
       if (!quiet) _note('attached to ${target.label}');
       if (state.view == View.inspector) unawaited(_fetchTree());
+      _syncNetworkPolling();
     } else if (session.state == SessionState.failed) {
       _dead.add(target.serviceUri.toString());
       state.addLog(
         LogLine(LogSource.session, 'Attach failed: ${session.failure}'),
       );
+    }
+    _schedule();
+  }
+
+  /// Poll the HTTP profiler only while its view is up.
+  ///
+  /// The profiler has no event stream: the traffic has to be asked for. Asking
+  /// once a second forever would be a request per second for a view nobody is
+  /// looking at, and the app keeps recording either way, so nothing is lost by
+  /// only polling while the view is on screen.
+  void _syncNetworkPolling() {
+    final wanted =
+        (state.session?.isConnected ?? false) &&
+        (state.view == View.network || state.overlay == Overlay.callDetail);
+    if (!wanted) {
+      _networkTimer?.cancel();
+      _networkTimer = null;
+      return;
+    }
+    if (_networkTimer != null) return;
+    unawaited(_pollNetwork());
+    _networkTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) => unawaited(_pollNetwork()),
+    );
+  }
+
+  Future<void> _pollNetwork() async {
+    final session = state.session;
+    if (_polling || session == null || !session.isConnected) return;
+    _polling = true;
+    try {
+      final failure = await session.pollHttpCalls();
+      if (state.followCalls && state.calls.isNotEmpty) {
+        state.callIndex = state.calls.length - 1;
+      }
+      if (failure != state.networkError) {
+        state.networkError = failure;
+        _schedule();
+      }
+    } finally {
+      _polling = false;
+    }
+  }
+
+  Future<void> _openCallDetail() async {
+    final call = state.selectedCall;
+    final session = state.session;
+    if (call == null || session == null) return;
+    state.overlay = Overlay.callDetail;
+    state.detailScroll = 0;
+    state.callDetail = null;
+    _schedule();
+    try {
+      state.callDetail = await session.fetchHttpCall(call.id);
+    } on Exception catch (error) {
+      _note('request detail failed: $error', isError: true);
     }
     _schedule();
   }
@@ -324,6 +391,21 @@ class App {
         report.error(error),
       );
     }
+    if (state.overlay == Overlay.callDetail || state.view == View.network) {
+      final call = state.selectedCall;
+      if (call == null) return null;
+      final outcome = call.hasError
+          ? 'failed'
+          : (call.statusCode == null
+                ? 'is still running'
+                : 'answered ${call.statusCode}');
+      return (
+        'http',
+        'Flutter app HTTP ${call.method} ${call.uri} $outcome '
+            'in ${target.label}.',
+        report.httpCall(call, detail: state.callDetail),
+      );
+    }
     if (state.view == View.logs) {
       final lines = state.visibleLogs;
       if (lines.isEmpty) return null;
@@ -404,6 +486,7 @@ class App {
       switch (state.overlay) {
         case Overlay.errorDetail:
         case Overlay.widgetDetail:
+        case Overlay.callDetail:
           state.detailScroll = (state.detailScroll + (up ? -3 : 3)).clamp(
             0,
             1 << 30,
@@ -426,6 +509,8 @@ class App {
               _errorsKey(Key(up ? 'up' : 'down'));
             case View.inspector:
               await _inspectorKey(Key(up ? 'up' : 'down'));
+            case View.network:
+              await _networkKey(Key(up ? 'up' : 'down'));
             case View.info:
               return;
           }
@@ -447,10 +532,23 @@ class App {
     if (!inBody) return;
     final item = bodyRow < state.hitRows.length ? state.hitRows[bodyRow] : null;
     if (item == null) return;
+    // A second click on the row already picked does what enter would do to it,
+    // which is the only way to reach a detail without touching the keyboard.
+    final again = _clicks.isRepeat(
+      '${state.overlay}/${state.view}',
+      item,
+      DateTime.now(),
+    );
     switch (state.overlay) {
       case Overlay.targets:
         state.targetCursor = item;
+        if (again) {
+          state.overlay = Overlay.none;
+          await _attach(item);
+        }
       case Overlay.toggles:
+        // A checkbox needs no double click: each click flips it, and clicking
+        // twice puts it back, which is what it looks like it should do.
         final toggle = DebugToggle.all[item];
         final session = state.session;
         if (session != null) {
@@ -460,15 +558,33 @@ class App {
         }
       case Overlay.none when state.view == View.errors:
         state.errorIndex = item;
+        if (again) {
+          state.overlay = Overlay.errorDetail;
+          state.detailScroll = 0;
+        }
       case Overlay.none when state.view == View.inspector:
         state.nodeIndex = item;
+        if (again) await _inspectorKey(const Key('enter'));
+      case Overlay.none when state.view == View.network:
+        _selectCall(item);
+        if (again) await _openCallDetail();
       case Overlay.none:
       case Overlay.help:
       case Overlay.errorDetail:
       case Overlay.widgetDetail:
+      case Overlay.callDetail:
         return;
     }
     _schedule();
+  }
+
+  /// Move the network selection, which also stops the list following its tail.
+  ///
+  /// Without this a click would be undone a second later by the next poll, and a
+  /// double click would land on two different rows.
+  void _selectCall(int index) {
+    state.callIndex = index;
+    state.followCalls = index >= (state.calls.length - 1).clamp(0, 1 << 30);
   }
 
   Future<void> _onKey(Key key) async {
@@ -494,6 +610,8 @@ class App {
       case '3':
         _setView(View.inspector);
       case '4':
+        _setView(View.network);
+      case '5':
         _setView(View.info);
       case 'tab':
         _setView(View.values[(state.view.index + 1) % View.values.length]);
@@ -533,6 +651,7 @@ class App {
     if (view == View.inspector && state.tree == null && !state.loadingTree) {
       unawaited(_fetchTree());
     }
+    _syncNetworkPolling();
     _schedule();
   }
 
@@ -544,9 +663,49 @@ class App {
         _errorsKey(key);
       case View.inspector:
         await _inspectorKey(key);
+      case View.network:
+        await _networkKey(key);
       case View.info:
         if (key.name == 'u') unawaited(_discover());
     }
+  }
+
+  Future<void> _networkKey(Key key) async {
+    final page = (terminal.rows - 4).clamp(1, 200);
+    final last = (state.calls.length - 1).clamp(0, 1 << 30);
+    switch (key.name) {
+      case 'j':
+      case 'down':
+        state.callIndex = (state.callIndex + 1).clamp(0, last);
+      case 'k':
+      case 'up':
+        state.callIndex = (state.callIndex - 1).clamp(0, last);
+      case 'pagedown':
+        state.callIndex = (state.callIndex + page).clamp(0, last);
+      case 'pageup':
+        state.callIndex = (state.callIndex - page).clamp(0, last);
+      case 'g':
+      case 'home':
+        state.callIndex = 0;
+      case 'G':
+      case 'end':
+        state.callIndex = last;
+      case 'u':
+        await _pollNetwork();
+      case 'c':
+        final failure = await state.session?.clearHttpCalls();
+        state.callIndex = 0;
+        state.followCalls = true;
+        if (failure != null) _note(failure, isError: true);
+      case 'enter':
+        if (state.calls.isNotEmpty) await _openCallDetail();
+      default:
+        return;
+    }
+    // Moving off the newest call stops the list from following it, and coming
+    // back to it starts again, the way scrolling the log works.
+    _selectCall(state.callIndex);
+    _schedule();
   }
 
   void _logsKey(Key key) {
@@ -720,11 +879,13 @@ class App {
         _schedule();
       case Overlay.errorDetail:
       case Overlay.widgetDetail:
+      case Overlay.callDetail:
         switch (key.name) {
           case 'esc':
           case 'q':
             state.overlay = Overlay.none;
             state.detailScroll = 0;
+            _syncNetworkPolling();
           case 'j':
           case 'down':
             state.detailScroll += 1;

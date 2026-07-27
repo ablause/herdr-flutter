@@ -1,6 +1,7 @@
 import 'diagnostics.dart';
 import 'discovery.dart';
 import 'models.dart';
+import 'network.dart';
 
 /// Markdown captures of what the sidebar is showing, for the agent to read.
 ///
@@ -59,6 +60,65 @@ class Report {
     buffer.writeln(renderNode(item.node, maxDepth: 10));
     buffer.writeln('```');
     return buffer.toString();
+  }
+
+  String httpCall(HttpCall call, {HttpCallDetail? detail}) {
+    final buffer = StringBuffer(
+      _header(
+        'Flutter app HTTP request',
+        DateTime.fromMicrosecondsSinceEpoch(call.startMicros),
+      ),
+    );
+    buffer.writeln('## Request');
+    buffer.writeln();
+    buffer.writeln('`${call.method} ${call.uri}`');
+    buffer.writeln();
+    final status = call.statusCode;
+    if (status != null) {
+      buffer.writeln(
+        '- Status: $status${call.reasonPhrase == null ? '' : ' ${call.reasonPhrase}'}',
+      );
+    }
+    final elapsed = call.duration();
+    if (elapsed != null) buffer.writeln('- Took: ${formatDuration(elapsed)}');
+    final bytes = call.responseBytes;
+    if (bytes != null) buffer.writeln('- Response size: ${formatBytes(bytes)}');
+    final error = call.error;
+    if (error != null) buffer.writeln('- Error: $error');
+    if (!call.isComplete) buffer.writeln('- Still in flight when captured');
+    buffer.writeln();
+    _headers(buffer, 'Request headers', call.requestHeaders);
+    _body(buffer, 'Request body', detail?.request);
+    _headers(buffer, 'Response headers', call.responseHeaders);
+    _body(buffer, 'Response body', detail?.response);
+    return buffer.toString();
+  }
+
+  void _headers(StringBuffer buffer, String title, Map<String, String> values) {
+    if (values.isEmpty) return;
+    buffer.writeln('## $title');
+    buffer.writeln();
+    final names = values.keys.toList()..sort();
+    for (final name in names) {
+      buffer.writeln('- `$name`: ${values[name]}');
+    }
+    buffer.writeln();
+  }
+
+  void _body(StringBuffer buffer, String title, HttpBody? body) {
+    if (body == null) return;
+    buffer.writeln('## $title');
+    buffer.writeln();
+    final text = body.text;
+    if (text == null) {
+      buffer.writeln('${formatBytes(body.byteCount)} that are not text.');
+      buffer.writeln();
+      return;
+    }
+    buffer.writeln('```');
+    buffer.writeln(text);
+    buffer.writeln('```');
+    buffer.writeln();
   }
 
   String logs(List<LogLine> lines, {String filter = '', int limit = 300}) {

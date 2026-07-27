@@ -1,0 +1,73 @@
+{
+  "type": "HttpProfile",
+  "timestamp": 1700000000900000,
+  "requests": [
+    {
+      "id": "1",
+      "isolateId": "isolates/1",
+      "method": "GET",
+      "uri": "https://api.example.com/v1/spots?near=48.85",
+      "startTime": 1700000000000000,
+      "endTime": 1700000000010000,
+      "events": [
+        {
+          "timestamp": 1700000000004000,
+          "event": "Connection established"
+        }
+      ],
+      "request": {
+        "headers": {
+          "accept": ["application/json"]
+        },
+        "contentLength": -1,
+        "cookies": [],
+        "followRedirects": true,
+        "maxRedirects": 5,
+        "persistentConnection": true
+      },
+      "response": {
+        "startTime": 1700000000012000,
+        "endTime": 1700000000124000,
+        "headers": {
+          "Content-Type": ["application/json; charset=utf-8"],
+          "Content-Length": ["842"]
+        },
+        "contentLength": 842,
+        "statusCode": 200,
+        "reasonPhrase": "OK",
+        "isRedirect": false,
+        "redirects": [],
+        "cookies": [],
+        "persistentConnection": true
+      }
+    },
+    {
+      "id": "2",
+      "isolateId": "isolates/1",
+      "method": "POST",
+      "uri": "https://api.example.com/v1/spots",
+      "startTime": 1700000000500000,
+      "events": [],
+      "request": {
+        "headers": {
+          "content-type": ["application/json"]
+        },
+        "contentLength": 31,
+        "cookies": [],
+        "followRedirects": true
+      }
+    },
+    {
+      "id": "3",
+      "isolateId": "isolates/1",
+      "method": "GET",
+      "uri": "https://api.example.com/v1/me",
+      "startTime": 1700000000200000,
+      "endTime": 1700000000260000,
+      "events": [],
+      "request": {
+        "error": "SocketException: Connection refused (OS Error: Connection refused, errno = 61)"
+      }
+    }
+  ]
+}

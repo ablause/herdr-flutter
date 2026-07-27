@@ -156,6 +156,37 @@ class Terminal {
   }
 }
 
+/// Recognises a double click: the same row clicked twice in quick succession.
+///
+/// An SGR mouse report carries no click count, so the pairing is ours to keep.
+/// The context is what the click landed on, the overlay and the view, so that a
+/// click in one list and a click in the next are never read as a pair.
+class ClickTracker {
+  ClickTracker({this.window = const Duration(milliseconds: 400)});
+
+  final Duration window;
+
+  String? _context;
+  int? _item;
+  DateTime? _at;
+
+  bool isRepeat(String context, int item, DateTime at) {
+    final previous = _at;
+    final repeat =
+        _context == context &&
+        _item == item &&
+        previous != null &&
+        !at.isBefore(previous) &&
+        at.difference(previous) <= window;
+    _context = context;
+    _item = item;
+    // A pair is consumed, so three clicks are one double click and then one
+    // single, rather than two overlapping pairs.
+    _at = repeat ? null : at;
+    return repeat;
+  }
+}
+
 /// Key presses only, for callers and tests that do not care about the mouse.
 List<Key> decodeKeys(List<int> bytes) =>
     decodeEvents(bytes).whereType<Key>().toList();

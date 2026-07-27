@@ -1,6 +1,7 @@
 import 'app_state.dart';
 import 'diagnostics.dart';
 import 'models.dart';
+import 'network.dart';
 import 'session.dart';
 import 'tui/style.dart';
 
@@ -35,10 +36,11 @@ class TabSpan {
 /// Where each tab sits on the top row, so a click can be mapped back to a view.
 List<TabSpan> tabSpans(AppState state, int width) {
   // The app and its state matter more than full tab names, so the names give way
-  // first, then disappear entirely, leaving the numbers that select them.
-  final detail = width >= 52
+  // first, then disappear entirely, leaving the numbers that select them. The
+  // thresholds are the width the five tabs take, plus room for the state word.
+  final detail = width >= 60
       ? _TabDetail.counts
-      : (width >= 34 ? _TabDetail.short : _TabDetail.numbers);
+      : (width >= 41 ? _TabDetail.short : _TabDetail.numbers);
   final spans = <TabSpan>[];
   var start = 0;
   for (final view in View.values) {
@@ -46,6 +48,7 @@ List<TabSpan> tabSpans(AppState state, int width) {
       View.logs => state.visibleLogs.length,
       View.errors => state.errors.length,
       View.inspector => state.flatTree.length,
+      View.network => state.calls.length,
       View.info => 0,
     };
     final label = switch (detail) {
@@ -126,6 +129,7 @@ List<String> _body(AppState state, int width, int height) {
       _widgetDetailBody(state, width, height),
       height,
     ),
+    Overlay.callDetail => _pad(_callDetailBody(state, width, height), height),
     Overlay.none => _pad(_viewBody(state, width, height), height),
   };
 }
@@ -139,6 +143,7 @@ List<String> _viewBody(AppState state, int width, int height) {
     View.logs => _logsBody(state, width, height),
     View.errors => _errorsBody(state, width, height),
     View.inspector => _inspectorBody(state, width, height),
+    View.network => _networkBody(state, width, height),
     View.info => _infoBody(state, width),
   };
 }
@@ -356,6 +361,208 @@ List<String> _inspectorBody(AppState state, int width, int height) {
   return rows;
 }
 
+/// The colour of a call is its outcome: the one thing worth scanning a list for.
+Style _statusStyle(HttpCall call, {required bool selected}) {
+  if (call.hasError) return Style.boldRed;
+  final status = call.statusCode;
+  if (status == null) return Style.dim;
+  if (status >= 500) return Style.boldRed;
+  if (status >= 400) return Style.yellow;
+  if (status >= 300) return Style.cyan;
+  return selected ? Style.boldGreen : Style.green;
+}
+
+String _statusText(HttpCall call) {
+  if (call.hasError) return 'ERR';
+  final status = call.statusCode;
+  if (status != null) return '$status';
+  return '···';
+}
+
+List<String> _networkBody(AppState state, int width, int height) {
+  final session = state.session;
+  if (session != null && !session.networkReady) {
+    return [
+      '',
+      _text('  No HTTP profiler in this app', width, Style.boldYellow),
+      '',
+      ..._wrap(
+        'The view reads dart:io\'s profiler, which a debug build registers on '
+        'its own. A release build, a web build, or an app that has not touched '
+        'dart:io yet does not answer for it.',
+        width - 4,
+      ).map((line) => _text('  $line', width, Style.dim)),
+    ];
+  }
+  if (!state.config.httpProfiling) {
+    return [
+      '',
+      _text('  Recording is off', width, Style.bold),
+      '',
+      ..._wrap(
+        'http_profiling is false in the plugin config. The app keeps every '
+        'recorded body in memory until it is cleared, which is the reason to '
+        'turn it off.',
+        width - 4,
+      ).map((line) => _text('  $line', width, Style.dim)),
+    ];
+  }
+  final calls = state.calls;
+  if (calls.isEmpty) {
+    final failure = state.networkError;
+    return [
+      '',
+      _text('  No requests recorded yet', width, Style.dim),
+      '',
+      ..._wrap(
+        failure ??
+            'Anything going through dart:io lands here, which covers '
+                'package:http and dio. A platform view, a native SDK or an '
+                'image loaded by the engine does not.',
+        width - 4,
+      ).map(
+        (line) =>
+            _text('  $line', width, failure == null ? Style.dim : Style.red),
+      ),
+    ];
+  }
+  final rows = <String>[];
+  final selected = state.callIndex.clamp(0, calls.length - 1);
+  final start = (selected - height ~/ 2).clamp(
+    0,
+    (calls.length - height).clamp(0, calls.length),
+  );
+  for (
+    var index = start;
+    index < calls.length && rows.length < height;
+    index++
+  ) {
+    final call = calls[index];
+    final isSelected = index == selected;
+    final line = LineBuilder(width);
+    line.add(isSelected ? '› ' : '  ', Style.boldCyan);
+    line.add(
+      '${_statusText(call).padLeft(3)} ',
+      _statusStyle(call, selected: isSelected),
+    );
+    line.add('${call.method} ', Style.brightBlack);
+    line.addEllipsized(call.path, isSelected ? Style.bold : Style.none);
+    final elapsed = call.duration(nowMicros: state.session?.profileMicros);
+    if (elapsed != null) {
+      final text = ' ${formatDuration(elapsed)} ';
+      if (line.remaining >= text.length) {
+        line.addRight(text, call.isComplete ? Style.brightBlack : Style.dim);
+      }
+    }
+    rows.add(line.build());
+    state.hitRows.add(index);
+    if (!isSelected || rows.length >= height) continue;
+    // The host repeats down the list, so it only shows for the row in hand,
+    // together with what the call is worth knowing about besides its path.
+    final detail = LineBuilder(width);
+    detail.add('    ', Style.none);
+    detail.addEllipsized(_callSubtitle(call), Style.brightBlack);
+    rows.add(detail.build());
+    state.hitRows.add(index);
+  }
+  return rows;
+}
+
+String _callSubtitle(HttpCall call) {
+  final parts = <String>[call.host];
+  final bytes = call.responseBytes;
+  if (bytes != null) parts.add(formatBytes(bytes));
+  final type = call.contentType.split(';').first.trim();
+  if (type.isNotEmpty) parts.add(type);
+  final error = call.error;
+  if (error != null) parts.add(error);
+  return parts.join(' · ');
+}
+
+List<String> _callDetailBody(AppState state, int width, int height) {
+  final call = state.selectedCall;
+  if (call == null) return [_text('  no request selected', width, Style.dim)];
+  final lines = <String>[];
+  void write(String text, [Style style = Style.none]) {
+    for (final part in _wrap(text, width - 1)) {
+      lines.add(_text(' $part', width, style));
+    }
+  }
+
+  void section(String title) {
+    lines.add('');
+    lines.add(_text(' $title', width, Style.bold));
+  }
+
+  write('${call.method} ${call.uri}', Style.boldCyan);
+  final elapsed = call.duration(nowMicros: state.session?.profileMicros);
+  final summary = <String>[
+    '${_statusText(call)}${call.reasonPhrase == null ? '' : ' ${call.reasonPhrase}'}',
+    if (elapsed != null) formatDuration(elapsed),
+    if (call.responseBytes != null) formatBytes(call.responseBytes!),
+  ];
+  write(summary.join(' · '), _statusStyle(call, selected: false));
+  final error = call.error;
+  if (error != null) {
+    lines.add('');
+    write(error, Style.red);
+  }
+
+  if (call.redirects.isNotEmpty) {
+    section('Redirects');
+    for (final hop in call.redirects) {
+      write('  $hop', Style.dim);
+    }
+  }
+
+  if (call.events.isNotEmpty) {
+    section('Timeline');
+    for (final event in call.events) {
+      final offset = Duration(microseconds: event.micros - call.startMicros);
+      final line = LineBuilder(width);
+      line.add('   ', Style.none);
+      line.addEllipsized(event.name, Style.none);
+      final text = ' +${formatDuration(offset)} ';
+      if (line.remaining >= text.length) line.addRight(text, Style.brightBlack);
+      lines.add(line.build());
+    }
+  }
+
+  void headers(String title, Map<String, String> values) {
+    if (values.isEmpty) return;
+    section(title);
+    final names = values.keys.toList()..sort();
+    for (final name in names) {
+      write('  $name: ${values[name]}', Style.dim);
+    }
+  }
+
+  void body(String title, HttpBody? content) {
+    if (content == null) return;
+    section(title);
+    final text = content.text;
+    if (text == null) {
+      write('  ${formatBytes(content.byteCount)} that are not text', Style.dim);
+      return;
+    }
+    for (final raw in const LineSplitterLite().split(text)) {
+      write('  $raw');
+    }
+  }
+
+  // The headers come with the list, the bodies only with the request fetched on
+  // opening, so the headers are up whatever the fetch is doing.
+  headers('Request headers', call.requestHeaders);
+  body('Request body', state.callDetail?.request);
+  headers('Response headers', call.responseHeaders);
+  body('Response body', state.callDetail?.response);
+  if (state.callDetail == null) {
+    section('Bodies');
+    write('  Fetching…', Style.dim);
+  }
+  return _scroll(lines, state.detailScroll, height);
+}
+
 List<String> _infoBody(AppState state, int width) {
   final session = state.session;
   final target = state.target;
@@ -397,6 +604,16 @@ List<String> _infoBody(AppState state, int width) {
     'inspector',
     session?.inspectorReady == true ? 'ready' : 'not registered',
   );
+  if (session != null) {
+    entry('http traffic', switch ((
+      session.networkReady,
+      session.httpProfilingEnabled,
+    )) {
+      (false, _) => 'no dart:io profiler',
+      (true, false) => 'not recording',
+      (true, true) => '${session.calls.length} recorded',
+    });
+  }
   entry('frames seen', session == null ? null : '${session.frames}');
   final build = session?.lastBuildMs;
   final raster = session?.lastRasterMs;
@@ -416,13 +633,15 @@ List<String> _infoBody(AppState state, int width) {
 
 List<String> _helpBody(int width) {
   const entries = <(String, String)>[
-    ('1 2 3 4 / tab', 'switch view'),
+    ('1 … 5 / tab', 'switch view'),
     ('click', 'switch view, or pick a row'),
+    ('double click', 'open it, the way enter would'),
     ('wheel', 'scroll, or move the selection'),
     ('j k up down', 'move'),
     ('g G', 'top, bottom (inspector: fetch tree)'),
     ('pgup pgdn', 'page'),
     ('enter', 'open detail, expand or collapse a node'),
+    ('c', 'clear the log, the errors or the traffic'),
     ('r', 'hot reload'),
     ('R', 'hot restart'),
     ('s', 'send what is on screen to the agent'),
@@ -431,7 +650,6 @@ List<String> _helpBody(int width) {
     ('x', 'select the widget in the app (inspector)'),
     ('f', 'summary tree or full tree (inspector)'),
     ('/', 'filter the log, esc clears'),
-    ('c', 'clear the log'),
     ('D', 'pick an app to attach to'),
     ('ctrl-l', 'redraw'),
     ('? esc', 'this help, close'),
@@ -597,6 +815,8 @@ String _statusBar(AppState state, int width) {
         compact
             ? 'enter fold  s send'
             : 'enter fold  x select  d details  s send',
+      View.network =>
+        compact ? 'enter detail  c clear' : 'enter detail  c clear  s send',
       View.info =>
         compact ? 'D apps  t toggles' : 'D apps  t toggles  r reload',
     },

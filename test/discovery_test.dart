@@ -35,6 +35,14 @@ A Dart VM Service on iPhone 17 is available at: http://127.0.0.1:64095/bbb=/
       expect(found.deviceName, isNull);
     });
 
+    test('reads it the way the VM itself spells service', () {
+      // The flutter tool writes `Dart VM Service`, the VM writes `Dart VM
+      // service`, and this pattern used to match only the first one.
+      const output =
+          'The Dart VM service is listening on http://127.0.0.1:8199/';
+      expect(extractAnnouncement(output)!.uri.port, 8199);
+    });
+
     test('reads the web debug service wording', () {
       const output = 'Debug service listening on ws://127.0.0.1:52000/xyz=/ws';
       expect(extractAnnouncement(output)!.uri.scheme, 'ws');

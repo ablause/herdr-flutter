@@ -1,7 +1,7 @@
 # herdr-flutter
 
 A herdr sidebar for a running Flutter app: its logs, its errors, its widget tree,
-and one key to hand any of that to the agent working beside it.
+its HTTP traffic, and one key to hand any of that to the agent working beside it.
 
 ![The sidebar beside the agent: an error, then the same error in the agent's input](assets/demo.gif)
 
@@ -16,12 +16,14 @@ own output, and closing the sidebar changes nothing about it.
   console rendering, kept even after they scroll off the run pane
 - **inspect**: the widget tree, summary or full, with the source location of each
   widget from the project, its text preview, and its properties on demand
+- **net**: the HTTP calls the app makes, with their status, duration and size, and
+  for each one its timings, its headers and its bodies, JSON pretty-printed
 - **restart**: hot reload and hot restart through the VM Service, so no keystroke
   is sent anywhere and the run pane does not need focus
 - **toggles**: paint guides, repaint rainbow, performance overlay, debug banner,
   oversized images, select-widget mode
-- **send**: write the current error, log tail or widget subtree to a report and
-  put a one-line pointer in the agent's input, then focus it
+- **send**: write the current error, log tail, widget subtree or request to a
+  report and put a one-line pointer in the agent's input, then focus it
 
 ## Requirements
 
@@ -89,24 +91,30 @@ pane at all, point the sidebar at it with `service_uri` in the plugin config.
 
 | key | does |
 | --- | --- |
-| `1` `2` `3` `4`, `tab` | switch view |
+| `1` … `5`, `tab` | switch view |
 | `j` `k`, arrows, `pgup` `pgdn`, `g` `G` | move |
-| `enter` | open a detail, or fold a tree node |
+| `enter`, double click | open a detail, or fold a tree node |
 | `r` / `R` | hot reload / hot restart |
 | `s` | send what is on screen to the agent |
 | `y` | copy the same capture to the clipboard |
 | `t` | debug toggles |
-| `u` | refresh (widget tree, or rediscovery from `info`) |
+| `u` | refresh (widget tree, traffic, or rediscovery from `info`) |
 | `f` | summary tree or full tree |
 | `x` | select the widget in the running app |
 | `d` | properties of the selected widget |
-| `/` `c` | filter the log, clear the log |
+| `/` | filter the log |
+| `c` | clear the log, the errors or the recorded traffic |
 | `D` | pick an app to attach to |
 | `?` `q` | keys, quit |
 
 The mouse works too: click a tab to switch view, click a row in the errors,
-inspector or app lists to select it, click a debug toggle to flip it, and use the
-wheel to scroll the log or move a selection.
+inspector, network or app lists to select it, click a debug toggle to flip it,
+and use the wheel to scroll the log or move a selection.
+
+Clicking a row twice does what `enter` does to it: it opens the error or the
+request, folds a widget, attaches to the app. A terminal reports each button
+press and knows nothing of double clicks, so the pairing is the sidebar's: the
+same row, twice, within 400 ms.
 
 Capturing the mouse is what takes click-drag text selection away from the pane.
 Most terminals still select with shift held down, `y` copies the current capture
@@ -128,6 +136,28 @@ The target is the sole agent in the sidebar's own tab, otherwise the sole agent 
 its workspace. Zero or several candidates refuse the send and say so; the report is
 still written, and its path is in the message.
 
+## The network view
+
+`4` lists the HTTP calls the app makes, newest last, and follows the newest one
+until you move off it. `enter` opens one: its timings, its headers, and its
+request and response bodies, with JSON pretty-printed whatever content type the
+server claimed. `c` clears the recording, in the app as well as in the sidebar.
+
+Three things are worth knowing about what it can see:
+
+- it reads `dart:io`'s profiler, so it covers `package:http`, dio, and anything
+  else built on `HttpClient`. A platform view, a native SDK or an image fetched
+  by the engine makes no appearance.
+- **nothing that happened before the sidebar attached is there.** The profiler is
+  off by default and keeps no history, so the list starts at the moment you
+  attached, and a hot restart starts it over.
+- recording keeps every request and response body in the app's memory until it is
+  cleared. An app that streams large payloads may prefer `http_profiling = false`,
+  which gives up the view and asks the app for nothing.
+
+The list is polled once a second, and only while the view is on screen. The app
+records either way, so nothing is lost by looking away.
+
 ## Configuration
 
 `$HERDR_PLUGIN_CONFIG_DIR/config.toml`, which is
@@ -142,6 +172,7 @@ log_limit = 5000             # lines kept in memory
 follow_logs = true           # stick to the newest line
 pane_lines = 3000            # scrollback read per pane while discovering
 mouse = true                 # clickable tabs and rows, at the cost of selection
+http_profiling = true        # record the app's HTTP traffic on attach
 ```
 
 Unknown keys and out-of-range values are errors, not silently ignored lines: every
@@ -153,7 +184,7 @@ instead of changing behaviour quietly.
 - No breakpoints, no stepping, no expression evaluation. Those need a source view
   and a frame stack, which is a different and much larger tool; DevTools and the
   IDE debuggers already do it well.
-- No profiling, no memory view, no timeline.
+- No CPU profiler, no memory view, no frame timeline.
 - It does not start the app. This was built and then removed: without breakpoints
   a launch key replaces typing a command in a pane, which up-arrow and enter
   already do in two keystrokes, and it dragged in a confirmation screen, a
@@ -171,7 +202,7 @@ instead of changing behaviour quietly.
 ## Development
 
 ```sh
-dart test        # 51 tests, no app or herdr needed
+dart test        # 97 tests, no app or herdr needed
 dart analyze
 bash herdr/install.sh --source                      # rebuild the binary
 ./bin/herdr-flutter --probe --json                  # attach once, report, exit
