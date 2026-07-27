@@ -60,14 +60,12 @@ class FlutterSession {
   FlutterSession({
     required this.target,
     required this.onLog,
-    required this.onError,
     required this.onChange,
     this.httpProfiling = true,
   });
 
   final AppTarget target;
   final void Function(LogLine) onLog;
-  final void Function(ErrorItem) onError;
   final void Function() onChange;
 
   /// Whether to ask the app to record its HTTP traffic. Recording keeps every
@@ -255,7 +253,11 @@ class FlutterSession {
     final data = event.extensionData?.data;
     if (kind == 'Flutter.Error' && data != null) {
       errorCount++;
-      onError(ErrorItem.fromEventData(Map<String, Object?>.from(data)));
+      onLog(
+        LogLine.forError(
+          ErrorItem.fromEventData(Map<String, Object?>.from(data)),
+        ),
+      );
       onChange();
       return;
     }

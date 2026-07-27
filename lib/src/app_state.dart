@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'config.dart';
 import 'discovery.dart';
 import 'models.dart';
@@ -6,7 +8,6 @@ import 'session.dart';
 
 enum View {
   logs('logs', 'log'),
-  errors('errors', 'err'),
   inspector('inspect', 'tree'),
   network('net', 'net'),
   info('info', 'info');
@@ -21,15 +22,7 @@ enum View {
 
 /// Which full-pane overlay is up, if any. A sidebar is too narrow for split
 /// detail panes, so detail takes the whole body and escape goes back.
-enum Overlay {
-  none,
-  help,
-  toggles,
-  targets,
-  errorDetail,
-  widgetDetail,
-  callDetail,
-}
+enum Overlay { none, help, toggles, targets, widgetDetail, callDetail }
 
 /// Everything the renderer needs. Mutated by the app, read by the views.
 class AppState {
@@ -60,13 +53,15 @@ class AppState {
   Overlay overlay = Overlay.none;
 
   final List<LogLine> logs = [];
-  int logScroll = 0;
+
+  /// Where the cursor sits when it is not riding the tail. Read through
+  /// [logCursor], which is the one that accounts for following and for a filter
+  /// that just changed under it.
+  int logIndex = 0;
   bool follow = true;
   String filter = '';
   bool editingFilter = false;
 
-  final List<ErrorItem> errors = [];
-  int errorIndex = 0;
   int detailScroll = 0;
 
   int callIndex = 0;
@@ -105,21 +100,44 @@ class AppState {
   HttpCall? get selectedCall =>
       calls.isEmpty ? null : calls[callIndex.clamp(0, calls.length - 1)];
 
-  ErrorItem? get selectedError =>
-      errors.isEmpty ? null : errors[errorIndex.clamp(0, errors.length - 1)];
+  /// The log line under the cursor. Following pins it to the newest line, so a
+  /// running app keeps the cursor where the output is.
+  int get logCursor {
+    final last = math.max(0, visibleLogs.length - 1);
+    return follow ? last : logIndex.clamp(0, last);
+  }
+
+  LogLine? get selectedLog {
+    final lines = visibleLogs;
+    return lines.isEmpty ? null : lines[logCursor];
+  }
+
+  /// The error the cursor is on, which is the only way one is reached now that
+  /// errors live in the log rather than in a list of their own.
+  ErrorItem? get selectedError => selectedLog?.error;
 
   WidgetNode? get selectedNode => flatTree.isEmpty
       ? null
       : flatTree[nodeIndex.clamp(0, flatTree.length - 1)];
 
-  List<LogLine> get visibleLogs => filter.isEmpty
-      ? logs
-      : logs.where((line) => line.matches(filter)).toList();
+  List<LogLine> get visibleLogs {
+    final parsed = LogFilter.parse(filter);
+    return parsed.isEmpty ? logs : logs.where(parsed.matches).toList();
+  }
+
+  /// The error lines showing their full rendering under themselves.
+  ///
+  /// Kept by identity, and pruned with the lines it refers to, so an unfolded
+  /// error that ages out of the buffer takes its entry here with it.
+  final Set<LogLine> unfolded = {};
 
   void addLog(LogLine line) {
     logs.add(line);
     final overflow = logs.length - config.logLimit;
-    if (overflow > 0) logs.removeRange(0, overflow);
+    if (overflow > 0) {
+      unfolded.removeAll(logs.take(overflow));
+      logs.removeRange(0, overflow);
+    }
   }
 
   void note(String message, {bool isError = false}) {

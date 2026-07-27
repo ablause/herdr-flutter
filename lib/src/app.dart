@@ -225,8 +225,6 @@ class App {
     state.tree = null;
     state.flatTree = [];
     state.collapsed.clear();
-    state.errors.clear();
-    state.errorIndex = 0;
     state.callIndex = 0;
     state.callDetail = null;
     state.networkError = null;
@@ -238,12 +236,6 @@ class App {
       httpProfiling: state.config.httpProfiling,
       onLog: (line) {
         state.addLog(line);
-        if (state.follow) state.logScroll = 0;
-        _schedule();
-      },
-      onError: (error) {
-        state.errors.add(error);
-        if (state.errors.length == 1) state.errorIndex = 0;
         _schedule();
       },
       onChange: _schedule,
@@ -392,7 +384,9 @@ class App {
         report.widget(node, details: state.nodeDetails),
       );
     }
-    if (state.overlay == Overlay.errorDetail || state.view == View.errors) {
+    // An error is sent when the cursor is on one, folded or not. Otherwise the
+    // logs view sends its tail, as it always did.
+    if (state.view == View.logs && state.selectedError != null) {
       final error = state.selectedError;
       if (error == null) return null;
       final location = error.location?.display(root: state.repoRoot);
@@ -496,7 +490,6 @@ class App {
     if (mouse.kind == MouseKind.wheelUp || mouse.kind == MouseKind.wheelDown) {
       final up = mouse.kind == MouseKind.wheelUp;
       switch (state.overlay) {
-        case Overlay.errorDetail:
         case Overlay.widgetDetail:
         case Overlay.callDetail:
           state.detailScroll = _scrollBy(state.detailScroll, up ? -3 : 3);
@@ -509,10 +502,7 @@ class App {
         case Overlay.none:
           switch (state.view) {
             case View.logs:
-              state.logScroll = _scrollBy(state.logScroll, up ? 3 : -3);
-              state.follow = state.logScroll == 0;
-            case View.errors:
-              _errorsKey(Key(up ? 'up' : 'down'));
+              _moveLogCursor(up ? -3 : 3, _lastIndex(state.visibleLogs.length));
             case View.inspector:
               await _inspectorKey(Key(up ? 'up' : 'down'));
             case View.network:
@@ -562,21 +552,19 @@ class App {
           final failure = await session.setToggle(toggle, enabled: !enabled);
           if (failure != null) _note(failure, isError: true);
         }
-      case Overlay.none when state.view == View.errors:
-        state.errorIndex = item;
-        if (again) {
-          state.overlay = Overlay.errorDetail;
-          state.detailScroll = 0;
-        }
       case Overlay.none when state.view == View.inspector:
         state.nodeIndex = item;
         if (again) await _inspectorKey(const Key('enter'));
       case Overlay.none when state.view == View.network:
         _selectCall(item);
         if (again) await _openCallDetail();
+      case Overlay.none when state.view == View.logs:
+        state.logIndex = item;
+        state.follow = item >= _lastIndex(state.visibleLogs.length);
+        // A second click unfolds the error the line stands for, when it is one.
+        if (again) _toggleUnfold();
       case Overlay.none:
       case Overlay.help:
-      case Overlay.errorDetail:
       case Overlay.widgetDetail:
       case Overlay.callDetail:
         return;
@@ -612,12 +600,10 @@ class App {
       case '1':
         _setView(View.logs);
       case '2':
-        _setView(View.errors);
-      case '3':
         _setView(View.inspector);
-      case '4':
+      case '3':
         _setView(View.network);
-      case '5':
+      case '4':
         _setView(View.info);
       case 'tab':
         _setView(View.values[(state.view.index + 1) % View.values.length]);
@@ -665,8 +651,6 @@ class App {
     switch (state.view) {
       case View.logs:
         _logsKey(key);
-      case View.errors:
-        _errorsKey(key);
       case View.inspector:
         await _inspectorKey(key);
       case View.network:
@@ -716,33 +700,59 @@ class App {
 
   void _logsKey(Key key) {
     final page = (terminal.rows - 4).clamp(1, 200);
+    final last = _lastIndex(state.visibleLogs.length);
     switch (key.name) {
       case 'j':
       case 'down':
-        state.logScroll = _scrollBy(state.logScroll, -1);
+        _moveLogCursor(1, last);
       case 'k':
       case 'up':
-        state.logScroll += 1;
+        _moveLogCursor(-1, last);
       case 'pagedown':
-        state.logScroll = _scrollBy(state.logScroll, -page);
+        _moveLogCursor(page, last);
       case 'pageup':
-        state.logScroll += page;
+        _moveLogCursor(-page, last);
       case 'G':
       case 'end':
-        state.logScroll = 0;
+        state.logIndex = last;
+        state.follow = true;
       case 'g':
       case 'home':
-        state.logScroll = 1 << 20;
+        state.logIndex = 0;
+        state.follow = false;
+      case 'enter':
+        if (!_toggleUnfold()) return;
       case 'c':
         state.logs.clear();
-        state.logScroll = 0;
+        state.unfolded.clear();
+        state.logIndex = 0;
+        state.follow = true;
       case '/':
         state.editingFilter = true;
       default:
         return;
     }
-    state.follow = state.logScroll == 0;
     _schedule();
+  }
+
+  /// Show or hide the full rendering under the error the cursor is on.
+  ///
+  /// Returns false when the line is not an error, so a caller can leave the key
+  /// unhandled rather than repaint for nothing.
+  bool _toggleUnfold() {
+    final line = state.selectedLog;
+    if (line == null || line.error == null) return false;
+    if (!state.unfolded.remove(line)) state.unfolded.add(line);
+    return true;
+  }
+
+  /// Move the log cursor by [delta].
+  ///
+  /// Reaching the newest line puts the cursor back on the tail, so a log that
+  /// has been caught up keeps scrolling on its own; anything else pins it.
+  void _moveLogCursor(int delta, int last) {
+    state.logIndex = (state.logCursor + delta).clamp(0, last);
+    state.follow = state.logIndex >= last;
   }
 
   void _filterKey(Key key) {
@@ -759,41 +769,10 @@ class App {
       default:
         if (key.isChar) state.filter += key.name;
     }
-    state.logScroll = 0;
-    _schedule();
-  }
-
-  void _errorsKey(Key key) {
-    switch (key.name) {
-      case 'j':
-      case 'down':
-        state.errorIndex = (state.errorIndex + 1).clamp(
-          0,
-          _lastIndex(state.errors.length),
-        );
-      case 'k':
-      case 'up':
-        state.errorIndex = (state.errorIndex - 1).clamp(
-          0,
-          _lastIndex(state.errors.length),
-        );
-      case 'g':
-      case 'home':
-        state.errorIndex = 0;
-      case 'G':
-      case 'end':
-        state.errorIndex = _lastIndex(state.errors.length);
-      case 'c':
-        state.errors.clear();
-        state.errorIndex = 0;
-      case 'enter':
-        if (state.errors.isNotEmpty) {
-          state.overlay = Overlay.errorDetail;
-          state.detailScroll = 0;
-        }
-      default:
-        return;
-    }
+    // A filter that changes moves the ground under the cursor, so it goes back
+    // to riding the tail rather than pointing at whatever now sits at its index.
+    state.logIndex = 0;
+    state.follow = true;
     _schedule();
   }
 
@@ -892,7 +871,6 @@ class App {
             await _attach(state.targetCursor);
         }
         _schedule();
-      case Overlay.errorDetail:
       case Overlay.widgetDetail:
       case Overlay.callDetail:
         switch (key.name) {

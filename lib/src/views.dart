@@ -46,7 +46,6 @@ List<TabSpan> tabSpans(AppState state, int width) {
   for (final view in View.values) {
     final count = switch (view) {
       View.logs => state.visibleLogs.length,
-      View.errors => state.errors.length,
       View.inspector => state.flatTree.length,
       View.network => state.calls.length,
       View.info => 0,
@@ -124,7 +123,6 @@ List<String> _body(AppState state, int width, int height) {
     Overlay.help => _pad(_helpBody(width), height),
     Overlay.toggles => _pad(_togglesBody(state, width), height),
     Overlay.targets => _pad(_targetsBody(state, width), height),
-    Overlay.errorDetail => _pad(_errorDetailBody(state, width, height), height),
     Overlay.widgetDetail => _pad(
       _widgetDetailBody(state, width, height),
       height,
@@ -141,7 +139,6 @@ List<String> _viewBody(AppState state, int width, int height) {
   }
   return switch (state.view) {
     View.logs => _logsBody(state, width, height),
-    View.errors => _errorsBody(state, width, height),
     View.inspector => _inspectorBody(state, width, height),
     View.network => _networkBody(state, width, height),
     View.info => _infoBody(state, width),
@@ -186,18 +183,38 @@ List<String> _disconnectedBody(AppState state, int width) {
   return lines;
 }
 
-/// A log entry as the display lines it occupies, newest entries last.
-List<String> _logDisplayLines(AppState state, int width) {
+/// The colour a source is drawn in, so a tag that takes in the filter box looks
+/// like the tag it will keep in the log.
+Style _tagStyle(LogSource source) => switch (source) {
+  LogSource.error => Style.boldRed,
+  LogSource.stderr => Style.red,
+  LogSource.developer => Style.cyan,
+  LogSource.session => Style.magenta,
+  LogSource.stdout => Style.none,
+};
+
+/// The same, except that in the filter box a tag has to read as one, and plain
+/// output has no colour of its own to say so.
+Style _filterTagStyle(LogSource source) =>
+    source == LogSource.stdout ? Style.bold : _tagStyle(source);
+
+/// The log as it is drawn, plus the entry each drawn row belongs to.
+///
+/// A wrapped entry owns several rows, so the two lists are built together:
+/// deriving one from the other after the fact is what makes a click land on
+/// the wrong line as soon as anything wraps.
+({List<String> lines, List<int?> owners}) _logDisplayLines(
+  AppState state,
+  int width,
+) {
   final showTime = width >= 64;
   final lines = <String>[];
-  for (final entry in state.visibleLogs) {
+  final owners = <int?>[];
+  final cursor = state.logCursor;
+  for (final (entryIndex, entry) in state.visibleLogs.indexed) {
+    final selected = entryIndex == cursor;
     final prefix = showTime ? '${_clock(entry.time)} ' : '';
-    final tagStyle = switch (entry.source) {
-      LogSource.stderr => Style.red,
-      LogSource.developer => Style.cyan,
-      LogSource.session => Style.magenta,
-      LogSource.stdout => Style.none,
-    };
+    final tagStyle = _tagStyle(entry.source);
     // The colour of the text comes from what the app said about the line: the
     // level of a developer.log record, or the stream it came out of.
     final textStyle = entry.isSevere || entry.source == LogSource.stderr
@@ -205,11 +222,18 @@ List<String> _logDisplayLines(AppState state, int width) {
         : (entry.isWarning ? Style.yellow : Style.none);
     final name = entry.name;
     final label = name == null ? '' : '$name ';
-    final indent = prefix.length + 4;
-    final body = _wrap(entry.text, width - indent - label.length);
+    // Two columns of gutter for the cursor, so it never sits against the clock.
+    final indent = 2 + prefix.length + 4;
+    final error = entry.error;
+    final unfolded = error != null && state.unfolded.contains(entry);
+    final head = error == null
+        ? entry.text
+        : '${unfolded ? '▾' : '▸'} ${entry.text}';
+    final body = _wrap(head, width - indent - label.length);
     for (final (index, part) in body.indexed) {
       final line = LineBuilder(width);
       if (index == 0) {
+        line.add(selected ? '› ' : '  ', Style.boldCyan);
         line.add(prefix, Style.brightBlack);
         line.add('${entry.source.tag} ', tagStyle);
         if (label.isNotEmpty) line.add(label, Style.boldCyan);
@@ -218,75 +242,58 @@ List<String> _logDisplayLines(AppState state, int width) {
       }
       line.add(part, textStyle);
       lines.add(line.build());
+      owners.add(entryIndex);
+    }
+    if (error == null) continue;
+    // Folded, an error still shows where it happened and what the framework was
+    // doing: a summary alone rarely says which of three call sites blew up.
+    // Unfolded, the whole rendering follows, still inside the run rather than
+    // on a page of its own. Either way every row belongs to the same entry, so
+    // a click anywhere in it lands on the error.
+    final location = error.location?.display(root: state.repoRoot);
+    // Two rows folded, whatever they hold: past that the previews of a handful
+    // of errors crowd out the run they are supposed to sit inside, and the
+    // third line of a rendering is usually a header whose content is cut off.
+    final detail = unfolded
+        ? const LineSplitterLite().split(error.detail).toList()
+        : error.preview(limit: location == null ? 2 : 1);
+    for (final raw in [if (location != null) location, ...detail]) {
+      for (final part in _wrap(raw, width - indent - 2)) {
+        final line = LineBuilder(width)
+          ..add(' ' * indent, Style.none)
+          ..add('│ ', Style.brightBlack)
+          ..add(
+            part,
+            raw == location
+                ? Style.boldCyan
+                : (unfolded ? _detailStyle(raw) : Style.brightBlack),
+          );
+        lines.add(line.build());
+        owners.add(entryIndex);
+      }
     }
   }
-  return lines;
+  return (lines: lines, owners: owners);
 }
 
 List<String> _logsBody(AppState state, int width, int height) {
-  final all = _logDisplayLines(state, width);
+  final (lines: all, owners: owners) = _logDisplayLines(state, width);
   if (all.isEmpty) {
     final message = state.filter.isEmpty
         ? '  Waiting for output from the app…'
         : '  No line matches "${state.filter}"';
     return ['', _text(message, width, Style.dim)];
   }
-  final maxScroll = (all.length - height).clamp(0, all.length);
-  final scroll = state.logScroll.clamp(0, maxScroll);
-  final end = all.length - scroll;
-  final start = (end - height).clamp(0, all.length);
+  // Following shows the tail. Off the tail the cursor is kept near the middle,
+  // the way the other lists do it, so moving never walks the selection off the
+  // edge of the pane.
+  final maxStart = (all.length - height).clamp(0, all.length);
+  final start = state.follow
+      ? maxStart
+      : (owners.indexOf(state.logCursor) - height ~/ 2).clamp(0, maxStart);
+  final end = (start + height).clamp(0, all.length);
+  state.hitRows.addAll(owners.sublist(start, end));
   return all.sublist(start, end);
-}
-
-List<String> _errorsBody(AppState state, int width, int height) {
-  if (state.errors.isEmpty) {
-    return [
-      '',
-      _text('  No errors since the sidebar attached', width, Style.dim),
-      '',
-      _text(
-        '  Flutter.Error events land here as they happen.',
-        width,
-        Style.dim,
-      ),
-    ];
-  }
-  final rows = <String>[];
-  final selected = state.errorIndex.clamp(0, state.errors.length - 1);
-  final start = (selected - height ~/ 2).clamp(
-    0,
-    (state.errors.length - height).clamp(0, state.errors.length),
-  );
-  for (
-    var index = start;
-    index < state.errors.length && rows.length < height;
-    index++
-  ) {
-    final error = state.errors[index];
-    final isSelected = index == selected;
-    final line = LineBuilder(width);
-    line.add(isSelected ? '› ' : '  ', Style.boldRed);
-    line.add('${_clock(error.time)} ', Style.brightBlack);
-    line.addEllipsized(error.summary, isSelected ? Style.boldRed : Style.red);
-    rows.add(line.build());
-    state.hitRows.add(index);
-    if (isSelected) {
-      final location = error.location;
-      if (location != null) {
-        final detail = LineBuilder(width);
-        detail.add('    ', Style.none);
-        detail.addEllipsized(
-          location.display(root: state.repoRoot),
-          Style.brightBlack,
-        );
-        if (rows.length < height) {
-          rows.add(detail.build());
-          state.hitRows.add(index);
-        }
-      }
-    }
-  }
-  return rows;
 }
 
 List<String> _inspectorBody(AppState state, int width, int height) {
@@ -633,15 +640,15 @@ List<String> _infoBody(AppState state, int width) {
 
 List<String> _helpBody(int width) {
   const entries = <(String, String)>[
-    ('1 … 5 / tab', 'switch view'),
+    ('1 … 4 / tab', 'switch view'),
     ('click', 'switch view, or pick a row'),
     ('double click', 'open it, the way enter would'),
     ('wheel', 'scroll, or move the selection'),
     ('j k up down', 'move'),
     ('g G', 'top, bottom (inspector: fetch tree)'),
     ('pgup pgdn', 'page'),
-    ('enter', 'open detail, expand or collapse a node'),
-    ('c', 'clear the log, the errors or the traffic'),
+    ('enter', 'unfold an error, open a detail, collapse a node'),
+    ('c', 'clear the log or the traffic'),
     ('r', 'hot reload'),
     ('R', 'hot restart'),
     ('s', 'send what is on screen to the agent'),
@@ -649,7 +656,7 @@ List<String> _helpBody(int width) {
     ('t', 'debug toggles'),
     ('x', 'select the widget in the app (inspector)'),
     ('f', 'summary tree or full tree (inspector)'),
-    ('/', 'filter the log, esc clears'),
+    ('/', 'filter: text, or a source tag then space; esc clears'),
     ('D', 'pick an app to attach to'),
     ('ctrl-l', 'redraw'),
     ('? esc', 'this help, close'),
@@ -720,29 +727,6 @@ List<String> _targetsBody(AppState state, int width) {
   return rows;
 }
 
-List<String> _errorDetailBody(AppState state, int width, int height) {
-  final error = state.selectedError;
-  if (error == null) return [_text('  no error selected', width, Style.dim)];
-  final lines = <String>[];
-  final location = error.location;
-  if (location != null) {
-    lines.add(
-      _text(
-        ' ${location.display(root: state.repoRoot)}',
-        width,
-        Style.boldCyan,
-      ),
-    );
-    lines.add('');
-  }
-  for (final raw in const LineSplitterLite().split(error.detail)) {
-    for (final part in _wrap(raw, width - 1)) {
-      lines.add(_text(' $part', width, _detailStyle(raw)));
-    }
-  }
-  return _scroll(lines, state.detailScroll, height);
-}
-
 List<String> _widgetDetailBody(AppState state, int width, int height) {
   final node = state.selectedNode;
   if (node == null) return [_text('  no widget selected', width, Style.dim)];
@@ -782,13 +766,35 @@ Style _detailStyle(String line) {
   return Style.none;
 }
 
+/// What `enter` would do to the error under the cursor, said as it is.
+String _foldWord(AppState state) {
+  final line = state.selectedLog;
+  final open = line != null && state.unfolded.contains(line);
+  return open ? 'enter fold' : 'enter unfold';
+}
+
 String _statusBar(AppState state, int width) {
   final line = LineBuilder(width);
   final status = state.status;
   if (state.editingFilter) {
     line.add(' filter ', Style.boldReverse);
-    line.add(' ${state.filter}', Style.none);
+    final parsed = LogFilter.parse(state.filter);
+    final source = parsed.source;
+    if (source == null) {
+      line.add(' ${state.filter}', Style.none);
+    } else {
+      // Once a whole tag is followed by a space it stops being text: it goes
+      // the colour it has in the log, which is the confirmation that the rest
+      // of what you type now searches inside that source alone.
+      line.add(' ${source.tag} ', _filterTagStyle(source));
+      line.add(parsed.text, Style.none);
+    }
     line.add('▌', Style.boldCyan);
+    // An empty box says what can go in it: the source tags are not guessable.
+    if (state.filter.isEmpty) {
+      final tags = LogSource.values.map((source) => source.tag).join(' ');
+      line.addRight(' text, or $tags then space ', Style.dim);
+    }
     return line.build();
   }
   if (status != null) {
@@ -805,12 +811,14 @@ String _statusBar(AppState state, int width) {
   final hints = switch (state.overlay) {
     Overlay.none when !attached => 'D rescan',
     Overlay.none => switch (state.view) {
+      View.logs when state.selectedError != null =>
+        compact
+            ? '${_foldWord(state)}  s send'
+            : '${_foldWord(state)}  s send  y copy  / filter',
       View.logs =>
         compact
             ? 'r reload  s send  / filter'
             : 'r reload  R restart  s send  / filter',
-      View.errors =>
-        compact ? 'enter detail  s send' : 'enter detail  s send  r reload',
       View.inspector =>
         compact
             ? 'enter fold  s send'
@@ -820,7 +828,14 @@ String _statusBar(AppState state, int width) {
       View.info =>
         compact ? 'D apps  t toggles' : 'D apps  t toggles  r reload',
     },
-    _ => 'esc close',
+    // A detail is where a capture is most worth handing over, so the keys that
+    // do it are named here rather than left to the help screen.
+    Overlay.widgetDetail || Overlay.callDetail =>
+      compact ? 's send  esc close' : 's send  y copy  esc close',
+    Overlay.help ||
+    Overlay.toggles ||
+    Overlay.targets ||
+    Overlay.none => 'esc close',
   };
 
   // Quitting stays pinned to the right whatever the view, the way reviewr keeps

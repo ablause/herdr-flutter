@@ -11,9 +11,12 @@ own output, and closing the sidebar changes nothing about it.
 
 ## What it does
 
-- **logs**: stdout, stderr and `dart:developer` log records, filterable
-- **errors**: every `Flutter.Error` with its summary, its `file:line` and the full
-  console rendering, kept even after they scroll off the run pane
+- **logs**: stdout, stderr, `dart:developer` records and every `Flutter.Error`,
+  in one stream in the order they happened. An error shows its summary in red
+  with its `file:line` and what the framework was doing under it, and unfolds
+  in place on `enter` to the full console rendering, without leaving the run.
+  `/` filters: type a source tag then a space to keep that source, and go on
+  typing to search inside it
 - **inspect**: the widget tree, summary or full, with the source location of each
   widget from the project, its text preview, and its properties on demand
 - **net**: the HTTP calls the app makes, with their status, duration and size, and
@@ -91,9 +94,9 @@ pane at all, point the sidebar at it with `service_uri` in the plugin config.
 
 | key | does |
 | --- | --- |
-| `1` … `5`, `tab` | switch view |
-| `j` `k`, arrows, `pgup` `pgdn`, `g` `G` | move |
-| `enter`, double click | open a detail, or fold a tree node |
+| `1` … `4`, `tab` | switch view |
+| `j` `k`, arrows, `pgup` `pgdn`, `g` `G` | move the cursor |
+| `enter`, double click | unfold an error, open a detail, fold a tree node |
 | `r` / `R` | hot reload / hot restart |
 | `s` | send what is on screen to the agent |
 | `y` | copy the same capture to the clipboard |
@@ -102,16 +105,16 @@ pane at all, point the sidebar at it with `service_uri` in the plugin config.
 | `f` | summary tree or full tree |
 | `x` | select the widget in the running app |
 | `d` | properties of the selected widget |
-| `/` | filter the log |
-| `c` | clear the log, the errors or the recorded traffic |
+| `/` | filter the log: text, or a source tag then a space |
+| `c` | clear the log or the recorded traffic |
 | `D` | pick an app to attach to |
 | `?` `q` | keys, quit |
 
-The mouse works too: click a tab to switch view, click a row in the errors,
+The mouse works too: click a tab to switch view, click a row in the log,
 inspector, network or app lists to select it, click a debug toggle to flip it,
-and use the wheel to scroll the log or move a selection.
+and use the wheel to move the selection.
 
-Clicking a row twice does what `enter` does to it: it opens the error or the
+Clicking a row twice does what `enter` does to it: it unfolds an error, opens a
 request, folds a widget, attaches to the app. A terminal reports each button
 press and knows nothing of double clicks, so the pairing is the sidebar's: the
 same row, twice, within 400 ms.
@@ -138,7 +141,7 @@ still written, and its path is in the message.
 
 ## The network view
 
-`4` lists the HTTP calls the app makes, newest last, and follows the newest one
+`3` lists the HTTP calls the app makes, newest last, and follows the newest one
 until you move off it. `enter` opens one: its timings, its headers, and its
 request and response bodies, with JSON pretty-printed whatever content type the
 server claimed. `c` clears the recording, in the app as well as in the sidebar.
@@ -193,7 +196,15 @@ instead of changing behaviour quietly.
 - The widget inspector is a debug-build feature. A profile or release build shows
   logs and errors but no tree.
 - Structured errors are the framework default on non-web debug builds. On the web
-  they are not sent, so the errors view stays empty there.
+  they are not sent, so no error line appears there. Where they are on, the event
+  is the *only* channel: enabling them replaces `FlutterError.presentError` with
+  the reporter that posts the event, so a framework error reaches neither stdout
+  nor stderr. That is why errors are a line in the log rather than an echo of one.
+- Errors live in the log and age out of it with everything else, at `log_limit`
+  lines. There was once a list of their own that could not be evicted; it went
+  because two places to look for one run is worse than losing the oldest error of
+  a five thousand line session. Typing `exc` and a space in the filter brings
+  back the view of them alone.
 - Reload and restart need the `flutter run` that owns the app to be alive, since it
   is the one that recompiles. If it never registered its services on the
   connection, the sidebar falls back to sending the `r` or `R` keystroke to the
@@ -202,7 +213,7 @@ instead of changing behaviour quietly.
 ## Development
 
 ```sh
-dart test        # 97 tests, no app or herdr needed
+dart test        # 114 tests, no app or herdr needed
 dart analyze
 bash herdr/install.sh --source                      # rebuild the binary
 ./bin/herdr-flutter --probe --json                  # attach once, report, exit

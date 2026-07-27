@@ -1,20 +1,43 @@
-import 'dart:convert';
-import 'dart:io';
-
 import 'package:herdr_flutter/src/diagnostics.dart';
 import 'package:herdr_flutter/src/discovery.dart';
 import 'package:herdr_flutter/src/models.dart';
 import 'package:herdr_flutter/src/report.dart';
 import 'package:test/test.dart';
 
-/// A real `Flutter.Error` payload, captured from a Flutter 3.44 debug build
-/// running on macOS. Only the deep render-object subtree was trimmed.
-Map<String, Object?> loadFixture() {
-  final file = File('test/fixtures/flutter_error.json');
-  return jsonDecode(file.readAsStringSync()) as Map<String, Object?>;
-}
+import 'fixtures.dart';
+
+Map<String, Object?> loadFixture() => flutterError();
 
 void main() {
+  test('the preview keeps the context line and drops the banner', () {
+    final preview = ErrorItem.fromEventData(loadFixture()).preview();
+    expect(preview, hasLength(2));
+    expect(preview.first, 'The following assertion was thrown during layout:');
+    // The rule above it and the summary below it are both skipped, since the
+    // summary is already on the line the preview hangs from.
+    expect(preview.any((line) => line.contains('═')), isFalse);
+    expect(preview.any((line) => line.contains('overflowed by 750')), isFalse);
+  });
+
+  test('a repeat error previews its tree, not its one-line form', () {
+    final data = Map<String, Object?>.from(loadFixture())
+      ..['errorsSinceReload'] = 3
+      ..['renderedErrorText'] = 'Another exception was thrown: boom';
+    final preview = ErrorItem.fromEventData(data).preview();
+    expect(preview, isNotEmpty);
+    expect(
+      preview.any((line) => line.startsWith('Another exception')),
+      isFalse,
+      reason: 'that sentence says nothing the summary does not',
+    );
+  });
+
+  test('the preview asks for no more lines than it is given', () {
+    final error = ErrorItem.fromEventData(loadFixture());
+    expect(error.preview(limit: 1), hasLength(1));
+    expect(error.preview(limit: 5), hasLength(5));
+  });
+
   test('the summary is the ErrorSummary node, not the wrapper description', () {
     final error = ErrorItem.fromEventData(loadFixture());
     expect(

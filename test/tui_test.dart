@@ -26,12 +26,8 @@ AppState connectedState({String device = 'iPhone 17'}) {
   );
   final state = AppState(config: const PluginConfig(), repoRoot: '/repo')
     ..targets = [target];
-  final session = FlutterSession(
-    target: target,
-    onLog: (_) {},
-    onError: (_) {},
-    onChange: () {},
-  )..state = SessionState.connected;
+  final session = FlutterSession(target: target, onLog: (_) {}, onChange: () {})
+    ..state = SessionState.connected;
   state.session = session;
   return state;
 }
@@ -203,10 +199,9 @@ void main() {
     test('one top row holds the numbered views and the attachment', () {
       final frame = plain(renderFrame(connectedState(), 72, 20));
       expect(frame.first, contains('1 logs'));
-      expect(frame.first, contains('2 errors'));
-      expect(frame.first, contains('3 inspect'));
-      expect(frame.first, contains('4 net'));
-      expect(frame.first, contains('5 info'));
+      expect(frame.first, contains('2 inspect'));
+      expect(frame.first, contains('3 net'));
+      expect(frame.first, contains('4 info'));
       expect(frame.first, contains('iPhone 17 · live'));
     });
 
@@ -218,7 +213,7 @@ void main() {
     test('a narrow top row keeps the state and drops the app name', () {
       final frame = plain(renderFrame(connectedState(), 41, 20));
       // The names give way to their short form before the state word does.
-      expect(frame.first, contains('4 net'));
+      expect(frame.first, contains('3 net'));
       expect(frame.first, contains('live'));
       expect(frame.first.contains('iPhone 17'), isFalse);
     });
@@ -265,24 +260,54 @@ void main() {
       expect(frame.any((line) => line.contains('err boom')), isTrue);
     });
 
-    test('an error list shows the summary and its location', () {
-      final state = connectedState()
-        ..view = View.errors
-        ..errors.add(
-          ErrorItem.fromEventData({
-            'description': 'Exception caught by widgets library',
-            'renderedErrorText': 'boom at file:///repo/lib/main.dart:12:3',
-            'properties': [
-              {'level': 'summary', 'description': 'Null check operator used'},
-            ],
-          }),
-        );
-      final frame = plain(renderFrame(state, 60, 12));
+    test('an error shows its summary in the log and its location on open', () {
+      final error = ErrorItem.fromEventData({
+        'description': 'Exception caught by widgets library',
+        'renderedErrorText': 'boom at file:///repo/lib/main.dart:12:3',
+        'properties': [
+          {'level': 'summary', 'description': 'Null check operator used'},
+        ],
+      });
+      final state = connectedState()..addLog(LogLine.forError(error));
+      final folded = plain(renderFrame(state, 60, 12));
       expect(
-        frame.any((line) => line.contains('Null check operator used')),
+        folded.any((line) => line.contains('Null check operator used')),
         isTrue,
       );
-      expect(frame.any((line) => line.contains('lib/main.dart:12')), isTrue);
+      expect(folded.any((line) => line.contains('▸')), isTrue);
+      // Folded still places the error: the location is worth more than the
+      // summary alone when three call sites share a message.
+      expect(folded.any((line) => line.contains('lib/main.dart:12')), isTrue);
+
+      state.unfolded.add(state.visibleLogs.single);
+      final open = plain(renderFrame(state, 60, 12));
+      expect(open.any((line) => line.contains('▾')), isTrue);
+      // It stays part of the log rather than taking the pane over.
+      expect(
+        open.any((line) => line.contains('Null check operator used')),
+        isTrue,
+      );
+    });
+
+    test('a folded error shows where it happened, not its stack', () {
+      final state = connectedState()..addLog(LogLine.forError(errorItem()));
+      final folded = plain(renderFrame(state, 72, 16));
+      expect(folded.any((line) => line.contains('lib/main.dart:29')), isTrue);
+      expect(
+        folded.any(
+          (line) => line.contains('The following assertion was thrown'),
+        ),
+        isTrue,
+      );
+      // Two rows folded, whatever they hold.
+      expect(folded.where((line) => line.contains('│')).length, 2);
+      // Nothing from deep in the rendering reaches a folded line.
+      expect(folded.any((line) => line.contains('RenderFlex#')), isFalse);
+      expect(folded.any((line) => line.contains('creator:')), isFalse);
+
+      state.unfolded.add(state.visibleLogs.single);
+      final open = plain(renderFrame(state, 72, 60));
+      expect(open.any((line) => line.contains('creator:')), isTrue);
     });
 
     test(
@@ -339,7 +364,7 @@ void main() {
     });
 
     test('the tab spans line up with what was drawn', () {
-      final state = connectedState()..view = View.errors;
+      final state = connectedState()..view = View.inspector;
       final frame = plain(renderFrame(state, 60, 12));
       for (final span in tabSpans(state, 60)) {
         expect(
@@ -351,13 +376,10 @@ void main() {
     });
 
     test('the hit map lines up row for row with a list body', () {
-      final state = connectedState()..view = View.errors;
+      final state = connectedState();
       for (var index = 0; index < 3; index++) {
-        state.errors.add(
-          ErrorItem.fromEventData({'description': 'boom $index'}),
-        );
+        state.addLog(LogLine(LogSource.stdout, 'line $index'));
       }
-      state.errorIndex = 1;
       final frame = renderFrame(state, 60, 12);
       final body = frame.sublist(1, frame.length - 1);
       expect(state.hitRows.length, lessThanOrEqualTo(body.length));
@@ -365,8 +387,8 @@ void main() {
         if (item == null) continue;
         expect(
           plain([body[row]]).single,
-          contains(state.errors[item].summary),
-          reason: 'body row $row must belong to error $item',
+          contains(state.visibleLogs[item].text),
+          reason: 'body row $row must belong to log line $item',
         );
       }
     });
@@ -463,6 +485,205 @@ void main() {
       expect(warning, contains('\x1b[33m'));
       // The logger name is shown apart from the message.
       expect(plain([severe]).single, contains('Bloc boom'));
+    });
+
+    test('an error marker sits in the log at the moment it happened', () {
+      final error = errorItem();
+      final state = connectedState()
+        ..addLog(LogLine(LogSource.stdout, 'before the error'))
+        ..addLog(
+          LogLine(
+            LogSource.error,
+            error.summary,
+            time: error.time,
+            level: 1000,
+            error: error,
+          ),
+        )
+        ..addLog(LogLine(LogSource.stdout, 'after the error'));
+      final frame = renderFrame(state, 70, 10);
+      final rows = plain(frame);
+      final marker = rows.indexWhere((line) => line.contains('overflowed'));
+      expect(marker, greaterThan(0));
+      expect(rows[marker], contains('exc'));
+      expect(frame[marker], contains('\x1b[1;31m'));
+      // Chronology is the whole point of the marker: without it the log would
+      // run straight from one line to the other with no sign of the error.
+      expect(
+        rows.indexWhere((line) => line.contains('before the error')),
+        lessThan(marker),
+      );
+      expect(
+        rows.indexWhere((line) => line.contains('after the error')),
+        greaterThan(marker),
+      );
+    });
+
+    test('every row of a wrapped marker points at its own log entry', () {
+      final error = errorItem();
+      final state = connectedState()
+        ..addLog(LogLine(LogSource.stdout, 'first'))
+        ..addLog(
+          LogLine(
+            LogSource.error,
+            error.summary,
+            time: error.time,
+            level: 1000,
+            error: error,
+          ),
+        );
+      // Narrow enough that the summary needs more than one row.
+      final frame = renderFrame(state, 40, 10);
+      final rows = plain(frame);
+      final owned = <int>[];
+      for (var row = 1; row < rows.length - 1; row++) {
+        if (rows[row].trim().isEmpty) continue;
+        final item = state.hitRows[row - 1];
+        if (item != null && state.visibleLogs[item].error != null) {
+          owned.add(row);
+        }
+      }
+      expect(owned.length, greaterThan(1), reason: 'the marker should wrap');
+      for (final row in owned) {
+        expect(state.visibleLogs[state.hitRows[row - 1]!].error, same(error));
+      }
+    });
+
+    test('an error on the cursor says it can be folded and sent', () {
+      final state = connectedState()..addLog(LogLine.forError(errorItem()));
+      final folded = plain(renderFrame(state, 72, 10)).last;
+      expect(folded, contains('enter unfold'));
+      expect(folded, contains('s send'));
+      expect(folded, contains('y copy'));
+      state.unfolded.add(state.visibleLogs.single);
+      expect(plain(renderFrame(state, 72, 10)).last, contains('enter fold'));
+      // The narrow pane drops the copy hint before the send one.
+      expect(plain(renderFrame(state, 44, 10)).last, contains('s send'));
+    });
+
+    test('unfolding an error keeps every one of its rows on that entry', () {
+      final state = connectedState()
+        ..addLog(LogLine(LogSource.stdout, 'before'))
+        ..addLog(LogLine.forError(errorItem()));
+      state.unfolded.add(state.visibleLogs.last);
+      final frame = renderFrame(state, 72, 20);
+      final rows = plain(frame);
+      final owned = <int>[];
+      for (var row = 1; row < rows.length - 1; row++) {
+        final item = state.hitRows[row - 1];
+        if (item != null && state.visibleLogs[item].error != null) {
+          owned.add(row);
+        }
+      }
+      // The summary plus the rendering under it, all clicking to the same line.
+      expect(owned.length, greaterThan(3));
+      expect(rows[owned.last], contains('│'));
+    });
+
+    test('a line that ages out takes its unfolded state with it', () {
+      final state = AppState(config: const PluginConfig(logLimit: 2))
+        ..addLog(LogLine.forError(errorItem()));
+      state.unfolded.add(state.logs.single);
+      expect(state.unfolded, hasLength(1));
+      state
+        ..addLog(LogLine(LogSource.stdout, 'one'))
+        ..addLog(LogLine(LogSource.stdout, 'two'));
+      expect(state.logs, hasLength(2));
+      expect(state.unfolded, isEmpty);
+    });
+
+    test('typing a source tag narrows the log to that source', () {
+      final state = connectedState()
+        ..addLog(LogLine(LogSource.stdout, 'plain output'))
+        ..addLog(LogLine.forError(errorItem()))
+        ..addLog(LogLine(LogSource.stderr, 'a warning on stderr'));
+      expect(state.visibleLogs.length, 3);
+      state.filter = 'exc';
+      expect(state.visibleLogs.single.error, isNotNull);
+      state.filter = 'err';
+      expect(state.visibleLogs.single.source, LogSource.stderr);
+    });
+
+    test('a tag that is also a word keeps finding the word', () {
+      final state = connectedState()
+        ..addLog(LogLine(LogSource.stdout, 'login failed for user 12'))
+        ..addLog(LogLine(LogSource.developer, 'cache warm', name: 'Boot'));
+      // The developer line by its tag, the other by its text. One rule, so
+      // nothing a reader can see is ever unreachable.
+      state.filter = 'log';
+      expect(state.visibleLogs, hasLength(2));
+      state.filter = 'login';
+      expect(state.visibleLogs.single.text, startsWith('login'));
+    });
+
+    test('a tag then a space pins the source and searches inside it', () {
+      final state = connectedState()
+        ..addLog(LogLine(LogSource.stdout, 'timeout on /spots'))
+        ..addLog(LogLine(LogSource.stderr, 'timeout on /users'))
+        ..addLog(LogLine(LogSource.stderr, 'socket closed'));
+      state.filter = 'err ';
+      expect(state.visibleLogs, hasLength(2));
+      // What follows the space searches that source and nothing else.
+      state.filter = 'err timeout';
+      expect(state.visibleLogs.single.text, contains('/users'));
+    });
+
+    test('the filter colours a tag once it takes', () {
+      final state = connectedState()..editingFilter = true;
+      // Still being typed: no colour, because it is still text.
+      state.filter = 'exc';
+      expect(renderFrame(state, 72, 10).last, isNot(contains('\x1b[1;31m')));
+      // Followed by a space it is the source, and says so.
+      state.filter = 'exc ';
+      final taken = renderFrame(state, 72, 10).last;
+      expect(taken, contains('\x1b[1;31m'));
+      expect(plain([taken]).single, contains('exc'));
+      // A word that is not a tag stays plain whatever follows it.
+      state.filter = 'spot ';
+      expect(renderFrame(state, 72, 10).last, isNot(contains('\x1b[1;31m')));
+    });
+
+    test('the empty filter box names the sources it accepts', () {
+      final state = connectedState()..editingFilter = true;
+      final bar = plain(renderFrame(state, 72, 10)).last;
+      expect(bar, contains('exc'));
+      expect(bar, contains('out'));
+      // Once something is typed the hint gets out of the way.
+      state.filter = 'e';
+      expect(plain(renderFrame(state, 72, 10)).last, isNot(contains('out')));
+    });
+
+    test('a colon that is not a source tag stays a plain search', () {
+      final state = connectedState()
+        ..addLog(LogLine(LogSource.stdout, 'GET http://host/spots 200'))
+        ..addLog(LogLine(LogSource.stdout, 'unrelated'));
+      state.filter = 'http://host';
+      expect(state.visibleLogs.single.text, contains('http://host'));
+    });
+
+    test('the cursor rides the tail until it is moved off it', () {
+      final state = connectedState();
+      for (var index = 0; index < 5; index++) {
+        state.addLog(LogLine(LogSource.stdout, 'line $index'));
+      }
+      expect(state.selectedLog!.text, 'line 4');
+      // Off the tail the cursor stays where it was put, even as more arrives.
+      state
+        ..follow = false
+        ..logIndex = 1;
+      state.addLog(LogLine(LogSource.stdout, 'line 5'));
+      expect(state.selectedLog!.text, 'line 1');
+    });
+
+    test('the cursor marks the selected line and only that one', () {
+      final state = connectedState()
+        ..addLog(LogLine(LogSource.stdout, 'first'))
+        ..addLog(LogLine(LogSource.stdout, 'second'));
+      final rows = plain(renderFrame(state, 60, 10));
+      final first = rows.firstWhere((line) => line.contains('first'));
+      final second = rows.firstWhere((line) => line.contains('second'));
+      expect(second, startsWith('›'), reason: 'the tail is selected');
+      expect(first, isNot(startsWith('›')));
     });
 
     test('a narrow pane still renders without overflowing', () {

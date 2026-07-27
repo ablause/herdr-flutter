@@ -105,11 +105,9 @@ Future<int> _probe(
   }
 
   final logs = <LogLine>[];
-  final errors = <ErrorItem>[];
   final session = FlutterSession(
     target: targets.first,
     onLog: logs.add,
-    onError: errors.add,
     onChange: () {},
   );
   await session.connect();
@@ -123,6 +121,12 @@ Future<int> _probe(
   await Future<void>.delayed(const Duration(seconds: 2));
   await session.pollHttpCalls();
   final tree = await session.fetchWidgetTree();
+  // Errors arrive as log lines carrying their report, so the probe reads them
+  // back out of the log rather than collecting them on a channel of their own.
+  final errors = [
+    for (final line in logs)
+      if (line.error != null) line.error!,
+  ];
   final report = {
     'targets': [
       for (final target in targets)
