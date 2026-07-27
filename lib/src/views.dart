@@ -184,7 +184,6 @@ List<String> _disconnectedBody(AppState state, int width) {
   return lines;
 }
 
-/// A log entry as the display lines it occupies, newest entries last.
 /// The log as it is drawn, plus the entry each drawn row belongs to.
 ///
 /// A wrapped entry owns several rows, so the two lists are built together:
@@ -789,7 +788,14 @@ String _statusBar(AppState state, int width) {
       View.info =>
         compact ? 'D apps  t toggles' : 'D apps  t toggles  r reload',
     },
-    _ => 'esc close',
+    // A detail is where a capture is most worth handing over, so the keys that
+    // do it are named here rather than left to the help screen.
+    Overlay.errorDetail || Overlay.widgetDetail || Overlay.callDetail =>
+      compact ? 's send  esc close' : 's send  y copy  esc close',
+    Overlay.help ||
+    Overlay.toggles ||
+    Overlay.targets ||
+    Overlay.none => 'esc close',
   };
 
   // Quitting stays pinned to the right whatever the view, the way reviewr keeps

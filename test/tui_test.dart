@@ -519,6 +519,18 @@ void main() {
       }
     });
 
+    test('the error detail says it can be sent to the agent', () {
+      final state = connectedState()
+        ..addLog(LogLine.forError(errorItem()))
+        ..overlay = Overlay.errorDetail;
+      final wide = plain(renderFrame(state, 72, 10)).last;
+      expect(wide, contains('s send'));
+      expect(wide, contains('y copy'));
+      // The narrow pane drops the copy hint before the send one.
+      final narrow = plain(renderFrame(state, 44, 10)).last;
+      expect(narrow, contains('s send'));
+    });
+
     test('exc: narrows the log to the errors alone', () {
       final state = connectedState()
         ..addLog(LogLine(LogSource.stdout, 'plain output'))
