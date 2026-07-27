@@ -98,10 +98,10 @@ A Dart VM Service on iPhone 17 is available at: http://127.0.0.1:64095/bbb=/
     test('busyOnly drops panes sitting at a shell prompt', () {
       final panes = [
         pane('w1:p1', title: 'flutter run -d macos'),
-        pane('w1:p2', title: 'ablause@Alexandres-MacBook-Pro-2:~/Projects/app'),
+        pane('w1:p2', title: 'dev@laptop:~/projects/app'),
         pane('w1:p3', title: 'zsh'),
         pane('w1:p4', title: '   '),
-        pane('w1:p5', title: 'task mobile:run:dev'),
+        pane('w1:p5', title: 'make run-dev'),
       ];
       final busy = candidatePanes(
         panes,
