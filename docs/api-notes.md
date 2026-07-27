@@ -110,6 +110,40 @@ Payload shape, from a real `RenderFlex overflowed` capture (see
   `Row Row:file:///…/main.dart:29:22`, so a `file:line` for an exception can only be
   recovered by parsing the text.
 
+## HTTP profiler (`ext.dart.io.`)
+
+Registered by `dart:io` rather than by Flutter, so it answers in any Dart VM and
+is absent from a web build. Verified against Dart 3.12 on macOS.
+
+- `httpEnableTimelineLogging` with `{'enabled': 'true'}` starts the recording and
+  answers `{"type": "HttpTimelineLoggingState", "enabled": true}`. Note the value
+  is a real boolean here, where the `ext.flutter.` toggles answer with the
+  strings `"true"` and `"false"`.
+- **nothing issued before the recording was switched on is ever reported.** The
+  profiler is off by default and keeps no history, so attaching to an app that
+  has been running for an hour starts from an empty list.
+- `getHttpProfile` answers `{'type', 'timestamp', 'requests': [...]}`, where
+  `timestamp` is the **app's own clock** in microseconds. Passing it back as
+  `updatedSince` on the next call asks for what changed since, which is what
+  makes polling cheap and is immune to a device whose clock differs from this
+  machine's. Both parameters are strings: the handler receives
+  `Map<String, String>` and parses them itself.
+- a request appears as soon as it starts. `response.statusCode` and
+  `response.endTime` stay null while it is in flight, and a request that never
+  reached the server carries `request.error` instead.
+- an unknown response length is reported as `contentLength: -1`, which is the
+  normal case for a chunked answer, not an error.
+- header values are lists, since a header can repeat.
+- `events[]` timestamps the steps of the call: `Connection established`,
+  `Request sent`, `Waiting (TTFB)`, `Content Download`.
+- `getHttpProfileRequest` with `{'id': …}` is the only call that carries
+  `requestBody` and `responseBody`, as byte lists.
+- `clearHttpProfile` drops the recording. A hot restart drops it too, and the new
+  isolate starts with the recording off, so it has to be switched on again.
+- only traffic through `dart:io`'s `HttpClient` is seen, which covers
+  `package:http` and dio. A platform view, a native SDK or an image fetched by
+  the engine is invisible to it.
+
 ## Other service extensions used
 
 Boolean toggles under `ext.flutter.`: `debugPaint`,

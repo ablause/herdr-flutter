@@ -1,0 +1,16 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:herdr_flutter/src/network.dart';
+
+/// A `getHttpProfile` answer as `dart:io` serializes it: microsecond timestamps
+/// on the device's own clock, header values as lists, an unknown content length
+/// reported as -1, and one request still in flight.
+Map<String, Object?> httpProfile() =>
+    jsonDecode(File('test/fixtures/http_profile.json').readAsStringSync())
+        as Map<String, Object?>;
+
+List<HttpCall> calls() => [
+  for (final entry in httpProfile()['requests'] as List)
+    HttpCall.fromJson(Map<String, Object?>.from(entry as Map)),
+];

@@ -23,6 +23,7 @@ class PluginConfig {
     this.followLogs = true,
     this.paneLines = 3000,
     this.mouse = true,
+    this.httpProfiling = true,
   });
 
   final String togglePlacement;
@@ -44,6 +45,13 @@ class PluginConfig {
   /// text selection away from the pane, so it can be turned off.
   final bool mouse;
 
+  /// Whether to ask the app to record its HTTP traffic on attach.
+  ///
+  /// The recording holds every request and response body in the app's memory
+  /// until it is cleared, so an app that streams large payloads may prefer to
+  /// keep it off and lose the network view.
+  final bool httpProfiling;
+
   static const _placements = {'split', 'overlay', 'zoomed', 'tab'};
   static const _directions = {'right', 'down'};
 
@@ -56,6 +64,7 @@ class PluginConfig {
     'follow_logs',
     'pane_lines',
     'mouse',
+    'http_profiling',
   };
 
   /// Only the keys the sidebar scripts consume, so bash never parses TOML.
@@ -125,6 +134,7 @@ class PluginConfig {
       followLogs: _bool(values, 'follow_logs', true, source),
       paneLines: paneLines,
       mouse: _bool(values, 'mouse', true, source),
+      httpProfiling: _bool(values, 'http_profiling', true, source),
     );
   }
 

@@ -1,12 +1,14 @@
 import 'config.dart';
 import 'discovery.dart';
 import 'models.dart';
+import 'network.dart';
 import 'session.dart';
 
 enum View {
   logs('logs', 'log'),
   errors('errors', 'err'),
   inspector('inspect', 'tree'),
+  network('net', 'net'),
   info('info', 'info');
 
   const View(this.label, this.short);
@@ -19,7 +21,15 @@ enum View {
 
 /// Which full-pane overlay is up, if any. A sidebar is too narrow for split
 /// detail panes, so detail takes the whole body and escape goes back.
-enum Overlay { none, help, toggles, targets, errorDetail, widgetDetail }
+enum Overlay {
+  none,
+  help,
+  toggles,
+  targets,
+  errorDetail,
+  widgetDetail,
+  callDetail,
+}
 
 /// Everything the renderer needs. Mutated by the app, read by the views.
 class AppState {
@@ -59,6 +69,14 @@ class AppState {
   int errorIndex = 0;
   int detailScroll = 0;
 
+  int callIndex = 0;
+  HttpCallDetail? callDetail;
+  String? networkError;
+
+  /// Whether the selection rides the newest call, the way the log follows its
+  /// tail. A user who scrolls up stops following until they come back down.
+  bool followCalls = true;
+
   WidgetNode? tree;
   List<WidgetNode> flatTree = [];
   final Set<String> collapsed = {};
@@ -79,6 +97,13 @@ class AppState {
   /// The renderer fills this so a click can be resolved against exactly what is
   /// on screen, scrolling and multi-row entries included.
   List<int?> hitRows = [];
+
+  /// The recorded traffic belongs to the connection, so it lives in the session
+  /// and goes away with it.
+  List<HttpCall> get calls => session?.calls ?? const [];
+
+  HttpCall? get selectedCall =>
+      calls.isEmpty ? null : calls[callIndex.clamp(0, calls.length - 1)];
 
   ErrorItem? get selectedError =>
       errors.isEmpty ? null : errors[errorIndex.clamp(0, errors.length - 1)];

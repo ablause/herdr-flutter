@@ -1,12 +1,17 @@
+import 'dart:convert';
+
 import 'package:herdr_flutter/src/app_state.dart';
 import 'package:herdr_flutter/src/config.dart';
 import 'package:herdr_flutter/src/discovery.dart';
 import 'package:herdr_flutter/src/models.dart';
+import 'package:herdr_flutter/src/network.dart';
 import 'package:herdr_flutter/src/session.dart';
 import 'package:herdr_flutter/src/tui/style.dart';
 import 'package:herdr_flutter/src/tui/terminal.dart';
 import 'package:herdr_flutter/src/views.dart';
 import 'package:test/test.dart';
+
+import 'fixtures.dart';
 
 /// The visible text of a frame, escape codes removed.
 List<String> plain(List<String> frame) => [
@@ -28,6 +33,16 @@ AppState connectedState({String device = 'iPhone 17'}) {
     onChange: () {},
   )..state = SessionState.connected;
   state.session = session;
+  return state;
+}
+
+/// A sidebar showing the network view of an app that recorded the fixture.
+AppState networkState() {
+  final state = connectedState()..view = View.network;
+  state.session!
+    ..extensionRpcs = {Ext.httpProfile}
+    ..httpProfilingEnabled = true
+    ..calls = calls();
   return state;
 }
 
@@ -104,6 +119,59 @@ void main() {
     });
   });
 
+  group('ClickTracker', () {
+    final start = DateTime(2026, 7, 26, 12);
+    test('two quick clicks on the same row are a pair', () {
+      final tracker = ClickTracker();
+      expect(tracker.isRepeat('net', 3, start), isFalse);
+      expect(
+        tracker.isRepeat(
+          'net',
+          3,
+          start.add(const Duration(milliseconds: 200)),
+        ),
+        isTrue,
+      );
+    });
+
+    test('a slow second click is another single click', () {
+      final tracker = ClickTracker();
+      tracker.isRepeat('net', 3, start);
+      expect(
+        tracker.isRepeat('net', 3, start.add(const Duration(seconds: 2))),
+        isFalse,
+      );
+    });
+
+    test('two rows clicked in turn are never a pair', () {
+      final tracker = ClickTracker();
+      tracker.isRepeat('net', 3, start);
+      expect(
+        tracker.isRepeat('net', 4, start.add(const Duration(milliseconds: 50))),
+        isFalse,
+      );
+    });
+
+    test('a click in another list does not pair with the one before', () {
+      final tracker = ClickTracker();
+      tracker.isRepeat('net', 3, start);
+      expect(
+        tracker.isRepeat('err', 3, start.add(const Duration(milliseconds: 50))),
+        isFalse,
+      );
+    });
+
+    test('three clicks are one pair, then a single', () {
+      final tracker = ClickTracker();
+      var at = start;
+      expect(tracker.isRepeat('net', 1, at), isFalse);
+      at = at.add(const Duration(milliseconds: 100));
+      expect(tracker.isRepeat('net', 1, at), isTrue);
+      at = at.add(const Duration(milliseconds: 100));
+      expect(tracker.isRepeat('net', 1, at), isFalse);
+    });
+  });
+
   group('LineBuilder', () {
     test('never exceeds the width, escape codes aside', () {
       final line = LineBuilder(10)
@@ -133,11 +201,12 @@ void main() {
     });
 
     test('one top row holds the numbered views and the attachment', () {
-      final frame = plain(renderFrame(connectedState(), 60, 20));
+      final frame = plain(renderFrame(connectedState(), 72, 20));
       expect(frame.first, contains('1 logs'));
       expect(frame.first, contains('2 errors'));
       expect(frame.first, contains('3 inspect'));
-      expect(frame.first, contains('4 info'));
+      expect(frame.first, contains('4 net'));
+      expect(frame.first, contains('5 info'));
       expect(frame.first, contains('iPhone 17 · live'));
     });
 
@@ -147,9 +216,18 @@ void main() {
     });
 
     test('a narrow top row keeps the state and drops the app name', () {
-      final frame = plain(renderFrame(connectedState(), 40, 20));
+      final frame = plain(renderFrame(connectedState(), 41, 20));
+      // The names give way to their short form before the state word does.
+      expect(frame.first, contains('4 net'));
       expect(frame.first, contains('live'));
       expect(frame.first.contains('iPhone 17'), isFalse);
+    });
+
+    test('a top row with no room left keeps only the tab numbers', () {
+      final frame = plain(renderFrame(connectedState(), 30, 20));
+      expect(frame.first, contains(' 4 '));
+      expect(frame.first.contains('net'), isFalse);
+      expect(frame.first, contains('live'));
     });
 
     test('an error count replaces the live marker', () {
@@ -307,6 +385,56 @@ void main() {
         if (item == null) continue;
         expect(body[row], contains('127.0.0.1:${item + 1}'));
       }
+    });
+
+    test('the network list shows the outcome, the verb and the path', () {
+      final state = networkState();
+      final frame = plain(renderFrame(state, 60, 14));
+      expect(frame.any((line) => line.contains('200 GET /v1/spots')), isTrue);
+      expect(frame.any((line) => line.contains('124ms')), isTrue);
+      // The host repeats down the list, so it only shows for the selected row.
+      expect(
+        frame.any((line) => line.contains('api.example.com · 842 B')),
+        isTrue,
+      );
+    });
+
+    test('a failed request is marked as such rather than left blank', () {
+      final state = networkState()..callIndex = 2;
+      final frame = plain(renderFrame(state, 60, 14));
+      expect(frame.any((line) => line.contains('ERR GET /v1/me')), isTrue);
+      expect(frame.any((line) => line.contains('Connection refused')), isTrue);
+    });
+
+    test('a request still running shows how long it has been waiting', () {
+      final state = networkState();
+      state.session!.profileMicros = 1700000000900000;
+      final frame = plain(renderFrame(state, 60, 14));
+      expect(frame.any((line) => line.contains('··· POST /v1/spots')), isTrue);
+      expect(frame.any((line) => line.contains('400ms')), isTrue);
+    });
+
+    test('the request detail shows the headers and the fetched bodies', () {
+      final state = networkState()
+        ..overlay = Overlay.callDetail
+        ..callDetail = HttpCallDetail(
+          call: calls().first,
+          response: HttpBody.fromBytes(utf8.encode('{"spots":[]}')),
+        );
+      final frame = plain(renderFrame(state, 60, 30));
+      final body = frame.join('\n');
+      expect(body, contains('GET https://api.example.com/v1/spots'));
+      expect(body, contains('200 OK · 124ms · 842 B'));
+      expect(body, contains('Connection established'));
+      expect(body, contains('accept: application/json'));
+      expect(body, contains('"spots": []'));
+    });
+
+    test('an app with no dart:io profiler says so', () {
+      final state = networkState()..view = View.network;
+      state.session!.extensionRpcs = {};
+      final frame = plain(renderFrame(state, 60, 14));
+      expect(frame.any((line) => line.contains('No HTTP profiler')), isTrue);
     });
 
     test('a pre-coloured line keeps its colours and its full width', () {

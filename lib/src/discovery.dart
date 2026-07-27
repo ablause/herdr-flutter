@@ -46,6 +46,8 @@ class ServiceAnnouncement {
   final String? deviceName;
 }
 
+// Case is not part of the wording: the flutter tool prints `Dart VM Service`
+// where the VM itself prints `Dart VM service`, and both reach a pane.
 final _announcementPatterns = <RegExp>[
   // flutter run, the common case: device name and http URI on one line. The URI
   // is kept exactly as printed, trailing slash included: the websocket path is
@@ -53,14 +55,20 @@ final _announcementPatterns = <RegExp>[
   RegExp(
     r'(?:A|The) Dart VM Service on (.+?) is available at:\s*(https?://\S+)',
     multiLine: true,
+    caseSensitive: false,
   ),
   // dart run and flutter test: no device name.
   RegExp(
     r'The Dart VM Service is listening on\s*(https?://\S+)',
     multiLine: true,
+    caseSensitive: false,
   ),
   // flutter run -d chrome announces the websocket directly.
-  RegExp(r'Debug service listening on\s*(wss?://\S+)', multiLine: true),
+  RegExp(
+    r'Debug service listening on\s*(wss?://\S+)',
+    multiLine: true,
+    caseSensitive: false,
+  ),
 ];
 
 /// The most recent VM Service announcement in `output`, or null.

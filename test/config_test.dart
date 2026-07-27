@@ -9,6 +9,15 @@ void main() {
     expect(config.autoOpen, isFalse);
     expect(config.logLimit, 5000);
     expect(config.serviceUri, '');
+    expect(config.httpProfiling, isTrue);
+  });
+
+  test('recording the traffic can be turned off', () {
+    expect(PluginConfig.parse('http_profiling = false').httpProfiling, isFalse);
+    expect(
+      () => PluginConfig.parse('http_profiling = "no"'),
+      throwsA(isA<ConfigException>()),
+    );
   });
 
   test('reads values, comments and blank lines', () {
