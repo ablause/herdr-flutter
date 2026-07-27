@@ -13,6 +13,18 @@ import 'session.dart';
 import 'tui/terminal.dart';
 import 'views.dart';
 
+/// The last valid index of a list of [length] items, or 0 when it is empty.
+///
+/// Cursors clamp against this rather than against `length - 1`, which is -1 for
+/// an empty list and would drag every cursor negative.
+int _lastIndex(int length) => math.max(0, length - 1);
+
+/// Move a scroll offset by [delta], never below the top.
+///
+/// There is no ceiling to enforce here: the renderer clamps to the content it
+/// actually has, which only it knows once the pane is laid out.
+int _scrollBy(int offset, int delta) => math.max(0, offset + delta);
+
 /// The sidebar: discovery, one live session, and the key handling around it.
 class App {
   App({
@@ -487,10 +499,7 @@ class App {
         case Overlay.errorDetail:
         case Overlay.widgetDetail:
         case Overlay.callDetail:
-          state.detailScroll = (state.detailScroll + (up ? -3 : 3)).clamp(
-            0,
-            1 << 30,
-          );
+          state.detailScroll = _scrollBy(state.detailScroll, up ? -3 : 3);
         case Overlay.targets:
           await _overlayKey(Key(up ? 'up' : 'down'));
           return;
@@ -500,10 +509,7 @@ class App {
         case Overlay.none:
           switch (state.view) {
             case View.logs:
-              state.logScroll = (state.logScroll + (up ? 3 : -3)).clamp(
-                0,
-                1 << 30,
-              );
+              state.logScroll = _scrollBy(state.logScroll, up ? 3 : -3);
               state.follow = state.logScroll == 0;
             case View.errors:
               _errorsKey(Key(up ? 'up' : 'down'));
@@ -584,7 +590,7 @@ class App {
   /// double click would land on two different rows.
   void _selectCall(int index) {
     state.callIndex = index;
-    state.followCalls = index >= (state.calls.length - 1).clamp(0, 1 << 30);
+    state.followCalls = index >= _lastIndex(state.calls.length);
   }
 
   Future<void> _onKey(Key key) async {
@@ -672,7 +678,7 @@ class App {
 
   Future<void> _networkKey(Key key) async {
     final page = (terminal.rows - 4).clamp(1, 200);
-    final last = (state.calls.length - 1).clamp(0, 1 << 30);
+    final last = _lastIndex(state.calls.length);
     switch (key.name) {
       case 'j':
       case 'down':
@@ -713,12 +719,12 @@ class App {
     switch (key.name) {
       case 'j':
       case 'down':
-        state.logScroll = (state.logScroll - 1).clamp(0, 1 << 30);
+        state.logScroll = _scrollBy(state.logScroll, -1);
       case 'k':
       case 'up':
         state.logScroll += 1;
       case 'pagedown':
-        state.logScroll = (state.logScroll - page).clamp(0, 1 << 30);
+        state.logScroll = _scrollBy(state.logScroll, -page);
       case 'pageup':
         state.logScroll += page;
       case 'G':
@@ -763,17 +769,20 @@ class App {
       case 'down':
         state.errorIndex = (state.errorIndex + 1).clamp(
           0,
-          (state.errors.length - 1).clamp(0, 1 << 30),
+          _lastIndex(state.errors.length),
         );
       case 'k':
       case 'up':
-        state.errorIndex = (state.errorIndex - 1).clamp(0, 1 << 30);
+        state.errorIndex = (state.errorIndex - 1).clamp(
+          0,
+          _lastIndex(state.errors.length),
+        );
       case 'g':
       case 'home':
         state.errorIndex = 0;
       case 'G':
       case 'end':
-        state.errorIndex = (state.errors.length - 1).clamp(0, 1 << 30);
+        state.errorIndex = _lastIndex(state.errors.length);
       case 'c':
         state.errors.clear();
         state.errorIndex = 0;
@@ -795,17 +804,20 @@ class App {
       case 'down':
         state.nodeIndex = (state.nodeIndex + 1).clamp(
           0,
-          (state.flatTree.length - 1).clamp(0, 1 << 30),
+          _lastIndex(state.flatTree.length),
         );
       case 'k':
       case 'up':
-        state.nodeIndex = (state.nodeIndex - 1).clamp(0, 1 << 30);
+        state.nodeIndex = (state.nodeIndex - 1).clamp(
+          0,
+          _lastIndex(state.flatTree.length),
+        );
       case 'g':
       case 'home':
         state.nodeIndex = 0;
       case 'G':
       case 'end':
-        state.nodeIndex = (state.flatTree.length - 1).clamp(0, 1 << 30);
+        state.nodeIndex = _lastIndex(state.flatTree.length);
       case 'enter':
       case 'l':
       case 'h':
@@ -865,11 +877,14 @@ class App {
           case 'down':
             state.targetCursor = (state.targetCursor + 1).clamp(
               0,
-              (state.targets.length - 1).clamp(0, 1 << 30),
+              _lastIndex(state.targets.length),
             );
           case 'k':
           case 'up':
-            state.targetCursor = (state.targetCursor - 1).clamp(0, 1 << 30);
+            state.targetCursor = (state.targetCursor - 1).clamp(
+              0,
+              _lastIndex(state.targets.length),
+            );
           case 'u':
             unawaited(_discover());
           case 'enter':
@@ -891,11 +906,11 @@ class App {
             state.detailScroll += 1;
           case 'k':
           case 'up':
-            state.detailScroll = (state.detailScroll - 1).clamp(0, 1 << 30);
+            state.detailScroll = _scrollBy(state.detailScroll, -1);
           case 'pagedown':
             state.detailScroll += page;
           case 'pageup':
-            state.detailScroll = (state.detailScroll - page).clamp(0, 1 << 30);
+            state.detailScroll = _scrollBy(state.detailScroll, -page);
           case 'g':
           case 'home':
             state.detailScroll = 0;
