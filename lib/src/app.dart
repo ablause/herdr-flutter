@@ -384,10 +384,9 @@ class App {
         report.widget(node, details: state.nodeDetails),
       );
     }
-    // An error is sent when the cursor is on one, whether or not its detail is
-    // open. Otherwise the logs view sends its tail, as it always did.
-    if (state.overlay == Overlay.errorDetail ||
-        (state.view == View.logs && state.selectedError != null)) {
+    // An error is sent when the cursor is on one, folded or not. Otherwise the
+    // logs view sends its tail, as it always did.
+    if (state.view == View.logs && state.selectedError != null) {
       final error = state.selectedError;
       if (error == null) return null;
       final location = error.location?.display(root: state.repoRoot);
@@ -491,7 +490,6 @@ class App {
     if (mouse.kind == MouseKind.wheelUp || mouse.kind == MouseKind.wheelDown) {
       final up = mouse.kind == MouseKind.wheelUp;
       switch (state.overlay) {
-        case Overlay.errorDetail:
         case Overlay.widgetDetail:
         case Overlay.callDetail:
           state.detailScroll = _scrollBy(state.detailScroll, up ? -3 : 3);
@@ -563,14 +561,10 @@ class App {
       case Overlay.none when state.view == View.logs:
         state.logIndex = item;
         state.follow = item >= _lastIndex(state.visibleLogs.length);
-        // A second click opens the error the line stands for, when it is one.
-        if (again && state.selectedError != null) {
-          state.overlay = Overlay.errorDetail;
-          state.detailScroll = 0;
-        }
+        // A second click unfolds the error the line stands for, when it is one.
+        if (again) _toggleUnfold();
       case Overlay.none:
       case Overlay.help:
-      case Overlay.errorDetail:
       case Overlay.widgetDetail:
       case Overlay.callDetail:
         return;
@@ -727,11 +721,10 @@ class App {
         state.logIndex = 0;
         state.follow = false;
       case 'enter':
-        if (state.selectedError == null) return;
-        state.overlay = Overlay.errorDetail;
-        state.detailScroll = 0;
+        if (!_toggleUnfold()) return;
       case 'c':
         state.logs.clear();
+        state.unfolded.clear();
         state.logIndex = 0;
         state.follow = true;
       case '/':
@@ -740,6 +733,17 @@ class App {
         return;
     }
     _schedule();
+  }
+
+  /// Show or hide the full rendering under the error the cursor is on.
+  ///
+  /// Returns false when the line is not an error, so a caller can leave the key
+  /// unhandled rather than repaint for nothing.
+  bool _toggleUnfold() {
+    final line = state.selectedLog;
+    if (line == null || line.error == null) return false;
+    if (!state.unfolded.remove(line)) state.unfolded.add(line);
+    return true;
   }
 
   /// Move the log cursor by [delta].
@@ -867,7 +871,6 @@ class App {
             await _attach(state.targetCursor);
         }
         _schedule();
-      case Overlay.errorDetail:
       case Overlay.widgetDetail:
       case Overlay.callDetail:
         switch (key.name) {

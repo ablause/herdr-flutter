@@ -123,7 +123,6 @@ List<String> _body(AppState state, int width, int height) {
     Overlay.help => _pad(_helpBody(width), height),
     Overlay.toggles => _pad(_togglesBody(state, width), height),
     Overlay.targets => _pad(_targetsBody(state, width), height),
-    Overlay.errorDetail => _pad(_errorDetailBody(state, width, height), height),
     Overlay.widgetDetail => _pad(
       _widgetDetailBody(state, width, height),
       height,
@@ -216,7 +215,12 @@ List<String> _disconnectedBody(AppState state, int width) {
     final label = name == null ? '' : '$name ';
     // Two columns of gutter for the cursor, so it never sits against the clock.
     final indent = 2 + prefix.length + 4;
-    final body = _wrap(entry.text, width - indent - label.length);
+    final error = entry.error;
+    final unfolded = error != null && state.unfolded.contains(entry);
+    final head = error == null
+        ? entry.text
+        : '${unfolded ? '▾' : '▸'} ${entry.text}';
+    final body = _wrap(head, width - indent - label.length);
     for (final (index, part) in body.indexed) {
       final line = LineBuilder(width);
       if (index == 0) {
@@ -230,6 +234,24 @@ List<String> _disconnectedBody(AppState state, int width) {
       line.add(part, textStyle);
       lines.add(line.build());
       owners.add(entryIndex);
+    }
+    if (!unfolded) continue;
+    // The whole rendering sits under its own line, still part of the run rather
+    // than a page of its own, and every row of it belongs to the same entry so
+    // a click anywhere in it lands on the error.
+    final location = error.location?.display(root: state.repoRoot);
+    for (final raw in [
+      if (location != null) location,
+      ...const LineSplitterLite().split(error.detail),
+    ]) {
+      for (final part in _wrap(raw, width - indent - 2)) {
+        final line = LineBuilder(width)
+          ..add(' ' * indent, Style.none)
+          ..add('│ ', Style.brightBlack)
+          ..add(part, raw == location ? Style.boldCyan : _detailStyle(raw));
+        lines.add(line.build());
+        owners.add(entryIndex);
+      }
     }
   }
   return (lines: lines, owners: owners);
@@ -606,7 +628,7 @@ List<String> _helpBody(int width) {
     ('j k up down', 'move'),
     ('g G', 'top, bottom (inspector: fetch tree)'),
     ('pgup pgdn', 'page'),
-    ('enter', 'open detail, expand or collapse a node'),
+    ('enter', 'unfold an error, open a detail, collapse a node'),
     ('c', 'clear the log or the traffic'),
     ('r', 'hot reload'),
     ('R', 'hot restart'),
@@ -686,29 +708,6 @@ List<String> _targetsBody(AppState state, int width) {
   return rows;
 }
 
-List<String> _errorDetailBody(AppState state, int width, int height) {
-  final error = state.selectedError;
-  if (error == null) return [_text('  no error selected', width, Style.dim)];
-  final lines = <String>[];
-  final location = error.location;
-  if (location != null) {
-    lines.add(
-      _text(
-        ' ${location.display(root: state.repoRoot)}',
-        width,
-        Style.boldCyan,
-      ),
-    );
-    lines.add('');
-  }
-  for (final raw in const LineSplitterLite().split(error.detail)) {
-    for (final part in _wrap(raw, width - 1)) {
-      lines.add(_text(' $part', width, _detailStyle(raw)));
-    }
-  }
-  return _scroll(lines, state.detailScroll, height);
-}
-
 List<String> _widgetDetailBody(AppState state, int width, int height) {
   final node = state.selectedNode;
   if (node == null) return [_text('  no widget selected', width, Style.dim)];
@@ -748,6 +747,13 @@ Style _detailStyle(String line) {
   return Style.none;
 }
 
+/// What `enter` would do to the error under the cursor, said as it is.
+String _foldWord(AppState state) {
+  final line = state.selectedLog;
+  final open = line != null && state.unfolded.contains(line);
+  return open ? 'enter fold' : 'enter unfold';
+}
+
 String _statusBar(AppState state, int width) {
   final line = LineBuilder(width);
   final status = state.status;
@@ -773,8 +779,8 @@ String _statusBar(AppState state, int width) {
     Overlay.none => switch (state.view) {
       View.logs when state.selectedError != null =>
         compact
-            ? 'enter error  s send'
-            : 'enter error  s send  / filter  r reload',
+            ? '${_foldWord(state)}  s send'
+            : '${_foldWord(state)}  s send  y copy  / filter',
       View.logs =>
         compact
             ? 'r reload  s send  / filter'
@@ -790,7 +796,7 @@ String _statusBar(AppState state, int width) {
     },
     // A detail is where a capture is most worth handing over, so the keys that
     // do it are named here rather than left to the help screen.
-    Overlay.errorDetail || Overlay.widgetDetail || Overlay.callDetail =>
+    Overlay.widgetDetail || Overlay.callDetail =>
       compact ? 's send  esc close' : 's send  y copy  esc close',
     Overlay.help ||
     Overlay.toggles ||

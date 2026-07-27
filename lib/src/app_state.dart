@@ -22,15 +22,7 @@ enum View {
 
 /// Which full-pane overlay is up, if any. A sidebar is too narrow for split
 /// detail panes, so detail takes the whole body and escape goes back.
-enum Overlay {
-  none,
-  help,
-  toggles,
-  targets,
-  errorDetail,
-  widgetDetail,
-  callDetail,
-}
+enum Overlay { none, help, toggles, targets, widgetDetail, callDetail }
 
 /// Everything the renderer needs. Mutated by the app, read by the views.
 class AppState {
@@ -133,10 +125,19 @@ class AppState {
     return parsed.isEmpty ? logs : logs.where(parsed.matches).toList();
   }
 
+  /// The error lines showing their full rendering under themselves.
+  ///
+  /// Kept by identity, and pruned with the lines it refers to, so an unfolded
+  /// error that ages out of the buffer takes its entry here with it.
+  final Set<LogLine> unfolded = {};
+
   void addLog(LogLine line) {
     logs.add(line);
     final overflow = logs.length - config.logLimit;
-    if (overflow > 0) logs.removeRange(0, overflow);
+    if (overflow > 0) {
+      unfolded.removeAll(logs.take(overflow));
+      logs.removeRange(0, overflow);
+    }
   }
 
   void note(String message, {bool isError = false}) {

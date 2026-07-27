@@ -269,15 +269,23 @@ void main() {
         ],
       });
       final state = connectedState()..addLog(LogLine.forError(error));
-      final log = plain(renderFrame(state, 60, 12));
+      final folded = plain(renderFrame(state, 60, 12));
       expect(
-        log.any((line) => line.contains('Null check operator used')),
+        folded.any((line) => line.contains('Null check operator used')),
         isTrue,
       );
-      // The location belongs to the detail, which is one keypress away.
-      state.overlay = Overlay.errorDetail;
-      final detail = plain(renderFrame(state, 60, 12));
-      expect(detail.any((line) => line.contains('lib/main.dart:12')), isTrue);
+      expect(folded.any((line) => line.contains('▸')), isTrue);
+      // Folded, the rendering stays out of the way.
+      expect(folded.any((line) => line.contains('lib/main.dart:12')), isFalse);
+      state.unfolded.add(state.visibleLogs.single);
+      final open = plain(renderFrame(state, 60, 12));
+      expect(open.any((line) => line.contains('lib/main.dart:12')), isTrue);
+      expect(open.any((line) => line.contains('▾')), isTrue);
+      // It stays part of the log rather than taking the pane over.
+      expect(
+        open.any((line) => line.contains('Null check operator used')),
+        isTrue,
+      );
     });
 
     test(
@@ -519,16 +527,47 @@ void main() {
       }
     });
 
-    test('the error detail says it can be sent to the agent', () {
-      final state = connectedState()
-        ..addLog(LogLine.forError(errorItem()))
-        ..overlay = Overlay.errorDetail;
-      final wide = plain(renderFrame(state, 72, 10)).last;
-      expect(wide, contains('s send'));
-      expect(wide, contains('y copy'));
+    test('an error on the cursor says it can be folded and sent', () {
+      final state = connectedState()..addLog(LogLine.forError(errorItem()));
+      final folded = plain(renderFrame(state, 72, 10)).last;
+      expect(folded, contains('enter unfold'));
+      expect(folded, contains('s send'));
+      expect(folded, contains('y copy'));
+      state.unfolded.add(state.visibleLogs.single);
+      expect(plain(renderFrame(state, 72, 10)).last, contains('enter fold'));
       // The narrow pane drops the copy hint before the send one.
-      final narrow = plain(renderFrame(state, 44, 10)).last;
-      expect(narrow, contains('s send'));
+      expect(plain(renderFrame(state, 44, 10)).last, contains('s send'));
+    });
+
+    test('unfolding an error keeps every one of its rows on that entry', () {
+      final state = connectedState()
+        ..addLog(LogLine(LogSource.stdout, 'before'))
+        ..addLog(LogLine.forError(errorItem()));
+      state.unfolded.add(state.visibleLogs.last);
+      final frame = renderFrame(state, 72, 20);
+      final rows = plain(frame);
+      final owned = <int>[];
+      for (var row = 1; row < rows.length - 1; row++) {
+        final item = state.hitRows[row - 1];
+        if (item != null && state.visibleLogs[item].error != null) {
+          owned.add(row);
+        }
+      }
+      // The summary plus the rendering under it, all clicking to the same line.
+      expect(owned.length, greaterThan(3));
+      expect(rows[owned.last], contains('│'));
+    });
+
+    test('a line that ages out takes its unfolded state with it', () {
+      final state = AppState(config: const PluginConfig(logLimit: 2))
+        ..addLog(LogLine.forError(errorItem()));
+      state.unfolded.add(state.logs.single);
+      expect(state.unfolded, hasLength(1));
+      state
+        ..addLog(LogLine(LogSource.stdout, 'one'))
+        ..addLog(LogLine(LogSource.stdout, 'two'));
+      expect(state.logs, hasLength(2));
+      expect(state.unfolded, isEmpty);
     });
 
     test('exc: narrows the log to the errors alone', () {

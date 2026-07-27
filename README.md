@@ -13,8 +13,8 @@ own output, and closing the sidebar changes nothing about it.
 
 - **logs**: stdout, stderr, `dart:developer` records and every `Flutter.Error`,
   in one stream in the order they happened. An error shows its summary in red
-  and opens on `enter` to its `file:line` and its full console rendering.
-  `/` filters, and `exc:` narrows to the errors alone
+  and unfolds in place on `enter` to its `file:line` and its full console
+  rendering, without leaving the run. `/` filters, `exc:` narrows to the errors
 - **inspect**: the widget tree, summary or full, with the source location of each
   widget from the project, its text preview, and its properties on demand
 - **net**: the HTTP calls the app makes, with their status, duration and size, and
@@ -94,7 +94,7 @@ pane at all, point the sidebar at it with `service_uri` in the plugin config.
 | --- | --- |
 | `1` … `4`, `tab` | switch view |
 | `j` `k`, arrows, `pgup` `pgdn`, `g` `G` | move the cursor |
-| `enter`, double click | open a detail, or fold a tree node |
+| `enter`, double click | unfold an error, open a detail, fold a tree node |
 | `r` / `R` | hot reload / hot restart |
 | `s` | send what is on screen to the agent |
 | `y` | copy the same capture to the clipboard |
@@ -112,8 +112,8 @@ The mouse works too: click a tab to switch view, click a row in the log,
 inspector, network or app lists to select it, click a debug toggle to flip it,
 and use the wheel to move the selection.
 
-Clicking a row twice does what `enter` does to it: it opens the error a line
-stands for or the request, folds a widget, attaches to the app. A terminal
+Clicking a row twice does what `enter` does to it: it unfolds an error, opens a
+request, folds a widget, attaches to the app. A terminal
 reports each button press and knows nothing of double clicks, so the pairing is
 the sidebar's: the same row, twice, within 400 ms.
 
@@ -210,7 +210,7 @@ instead of changing behaviour quietly.
 ## Development
 
 ```sh
-dart test        # 100 tests, no app or herdr needed
+dart test        # 106 tests, no app or herdr needed
 dart analyze
 bash herdr/install.sh --source                      # rebuild the binary
 ./bin/herdr-flutter --probe --json                  # attach once, report, exit
